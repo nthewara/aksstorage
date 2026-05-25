@@ -1,7 +1,15 @@
 # Lab Guide — Azure Container Storage v2.1 on AKS
 
 Primary path: **Cassandra on local NVMe** (ephemeral disk, Lsv3 storage pool).
-Secondary: Postgres on Azure Disk. Optional third: Elastic SAN (see `docs/ELASTIC-SAN.md`).
+Secondary: Postgres on Azure Disk **via the AKS built-in CSI driver** (not ACS).
+Optional third: Elastic SAN (see `docs/ELASTIC-SAN.md`).
+
+> **ACS v2.x scope reminder**: the `--enable-azure-container-storage` flag only
+> accepts `ephemeralDisk` or `elasticSan` in v2.1. The v1.x `azureDisk` ACS type
+> was removed in v2.0. For disk-backed PVs we use the built-in
+> `disk.csi.azure.com` driver that ships with every AKS cluster — no ACS
+> involvement. See the
+> [ACS release notes](https://learn.microsoft.com/en-us/azure/storage/container-storage/container-storage-release-notes).
 
 ---
 
@@ -217,22 +225,33 @@ kubectl -n cassandra logs -f job/fio-nvme
 
 ---
 
-## 10. Secondary scenario — Postgres on Azure Disk
+## 10. Secondary scenario — Postgres on Azure Disk (built-in CSI, NOT ACS)
+
+In ACS v2.x the `azureDisk` storage type no longer exists — it was removed in
+v2.0. Disk-backed PVs use the **AKS built-in `disk.csi.azure.com` driver**,
+which is enabled on every AKS cluster by default. No `az aks update --enable-
+azure-container-storage` step is needed for this scenario.
 
 ```bash
-# Enable Azure Disk storage type (additive, coexists with ephemeralDisk)
-az aks update -g "$RG" -n "$CLUSTER" --enable-azure-container-storage azureDisk
+# No ACS enable step — disk.csi.azure.com is already installed on the cluster.
+kubectl get csidrivers | grep disk.csi.azure.com
 
 kubectl apply -f manifests/storageclass/azure-disk.yaml
 kubectl apply -f manifests/workloads/postgres-statefulset.yaml
 kubectl -n acstor-demo get pvc,pod -w
 ```
 
+> Included here as a side-by-side comparison with the ACS NVMe and ESAN flows —
+> useful when you need durable, reattachable block storage but don't want to
+> bring ACS into the picture.
+
 ---
 
 ## 11. Switching / adding storage types post-install
 
-v2.1 supports additive enable/disable. Each type deploys its own CSI driver:
+v2.1 supports additive enable/disable of ACS-managed types. The only valid
+storage types for `--enable-azure-container-storage` in v2.x are
+`ephemeralDisk` and `elasticSan` — there is no `azureDisk` option anymore.
 
 ```bash
 # Add ESAN support alongside NVMe (both can coexist)
@@ -248,6 +267,10 @@ az aks update -g "$RG" -n "$CLUSTER" \
 az aks update -g "$RG" -n "$CLUSTER" \
   --disable-azure-container-storage
 ```
+
+> Azure Disk and Azure Files PVs use the AKS built-in CSI drivers
+> (`disk.csi.azure.com`, `file.csi.azure.com`) and are unaffected by these
+> commands — they're independent of ACS lifecycle.
 
 ---
 

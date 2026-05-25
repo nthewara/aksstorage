@@ -1,6 +1,6 @@
 # aksstorage — Azure Container Storage **v2.1** on AKS
 
-**Cassandra on local NVMe** as primary workload · **Azure Disk** secondary · **Elastic SAN** optional
+**Cassandra on local NVMe** as primary workload · **Elastic SAN** optional · **Azure Disk** & **Azure Files** via built-in CSI
 
 [![bicep](https://img.shields.io/badge/bicep-validated-brightgreen)](infra/)
 [![lab](https://img.shields.io/badge/lab-v2.1--ready-blue)](docs/LAB.md)
@@ -59,7 +59,7 @@ docs/
   LAB.md               Full step-by-step (Cassandra NVMe primary path)
   K9S.md               k9s terminal UI — install + lab cheatsheet
   STORAGE-ARCHITECTURE.md  Mental model — ephemeral vs persistent, replication ownership, CSI comparison
-  SCENARIOS.md         Picker matrix — NVMe vs AzureDisk vs ESAN vs Files
+  SCENARIOS.md         Picker matrix — ACS-managed (NVMe, ESAN) vs built-in CSI (Disk, Files)
   ELASTIC-SAN.md       ESAN bring-up + multi-PV demo
   FAILURE-SCENARIOS.md Cassandra + NVMe specific failure exercises
   AZURE-FILES.md       Azure Files (SMB + NFS) RWX walkthrough + nginx-shared demo
@@ -73,12 +73,17 @@ tests/
 
 ## Pick your storage
 
-| Storage type | StorageClass | Best for |
-|---|---|---|
-| Local NVMe (primary) | `local-nvme` | Cassandra, Redis, Kafka — app-level replication |
-| Azure Disk (secondary) | `azure-disk-acstor` | Postgres — durable, reattachable |
-| Elastic SAN (optional) | `azuresan-csi` | DBaaS / 100s of PVs, bypass disk-attach limits |
-| Azure Files | `acstor-azurefiles-{standard,premium,nfs}` | RWX / SMB / NFS — shared content, web farms, CI caches → [`docs/AZURE-FILES.md`](docs/AZURE-FILES.md) |
+ACS v2.1 only manages **two** storage types: `ephemeralDisk` (local NVMe) and
+`elasticSan`. Disk-backed and file-backed PVs use the **AKS built-in CSI
+drivers** that ship with every cluster — included here for side-by-side
+comparison.
+
+| Storage type | StorageClass | Managed by | Best for |
+|---|---|---|---|
+| Local NVMe (primary) | `local-nvme` | **ACS v2.1** (`ephemeralDisk`) | Cassandra, Redis, Kafka — app-level replication |
+| Elastic SAN (optional) | `azuresan-csi` | **ACS v2.1** (`elasticSan`) | DBaaS / 100s of PVs, bypass disk-attach limits |
+| Azure Disk | `azure-disk` | AKS built-in CSI (`disk.csi.azure.com`) | Postgres — durable, reattachable block |
+| Azure Files | `acstor-azurefiles-{standard,premium,nfs}` | AKS built-in CSI (`file.csi.azure.com`) | RWX / SMB / NFS — shared content, web farms, CI caches → [`docs/AZURE-FILES.md`](docs/AZURE-FILES.md) |
 
 → Full matrix: [`docs/SCENARIOS.md`](docs/SCENARIOS.md)
 → Concepts/why: [`docs/STORAGE-ARCHITECTURE.md`](docs/STORAGE-ARCHITECTURE.md)

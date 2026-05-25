@@ -251,21 +251,22 @@ Size base TiB according to aggregate IOPS demand, not individual volume size.
 v2.1 supports additive enable/disable without cluster downtime:
 
 ```bash
-# Scenario: migrate from NVMe to AzureDisk
-# Step 1: enable azureDisk (additive — does not remove NVMe)
-az aks update -g "$RG" -n "$CLUSTER" --enable-azure-container-storage azureDisk
-
-# Step 2: create new PVCs using azure-disk StorageClass
+# Scenario: migrate from ACS NVMe to built-in Azure Disk CSI
+# Step 1: apply the azure-disk StorageClass (no ACS enable needed —
+#         disk.csi.azure.com ships with AKS by default; ACS v2.x does
+#         not manage the azureDisk type any more)
 kubectl apply -f manifests/storageclass/azure-disk.yaml
 
-# Step 3: migrate data (application-level, e.g. Cassandra nodetool repair)
-# Step 4: update workload manifests to use new SC
-# Step 5: once no workloads reference local-nvme, disable it
+# Step 2: migrate data (application-level, e.g. Cassandra nodetool repair)
+# Step 3: update workload manifests to use new SC
+# Step 4: once no workloads reference local-nvme, disable it
 az aks update -g "$RG" -n "$CLUSTER" --disable-azure-container-storage ephemeralDisk
 ```
 
 **Expected**: NVMe CSI driver removed from storagepool nodes. Any remaining
 PVCs referencing `local-nvme` SC enter `Pending` state → migrate before disabling.
+New PVCs using the built-in `azure-disk` SC bind normally; the built-in CSI
+driver is independent of ACS lifecycle.
 
 ---
 
