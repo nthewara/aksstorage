@@ -1,0 +1,64 @@
+# NoSQLBench load generator — modern alternative to cassandra-stress
+#
+# Why use this instead of (or alongside) cassandra-loadgen.yaml:
+#   - Better metrics: HDR histograms, p50/p95/p99/p999 latency
+#   - Realistic workloads: scriptable (CQL templates, ramp-up, mixed read/write)
+#   - Cleaner output (per-second progress + JSON/CSV summary)
+#
+# Run:
+#   kubectl apply -f manifests/workloads/nosqlbench-loadgen.yaml
+#   kubectl -n default logs -f job/nosqlbench-loadgen
+#
+# Clean up:
+#   kubectl delete -f manifests/workloads/nosqlbench-loadgen.yaml
+#
+# Workload below: cql-keyvalue, 5M ops, 60/40 write/read mix, 8 threads,
+# targets the headless service `cassandra` on port 9042. Adjust args for
+# more pressure (threads=auto, cycles=20M, etc).
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nosqlbench-loadgen
+  namespace: default
+  labels:
+    app: nosqlbench-loadgen
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: nosqlbench-loadgen
+    spec:
+      restartPolicy: Never
+      # Don't schedule the loadgen on the Lsv3 storagepool — keep storage nodes
+      # for the DB itself. Anti-affinity / nodeSelector to syspool.
+      nodeSelector:
+        kubernetes.azure.com/agentpool: syspool
+      containers:
+        - name: nb5
+          image: nosqlbench/nosqlbench:5.21
+          imagePullPolicy: IfNotPresent
+          args:
+            - "cql-keyvalue2"
+            - "default"
+            - "host=cassandra"
+            - "localdc=datacenter1"
+            - "rampup-cycles=100000"
+            - "main-cycles=5000000"
+            - "threads=auto"
+            - "errors=warn,retry"
+            - "--report-summary-to"
+            - "stdout:60"
+            - "--report-csv-to"
+            - "/tmp/nb-metrics"
+            - "--progress"
+            - "console:5s"
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"
