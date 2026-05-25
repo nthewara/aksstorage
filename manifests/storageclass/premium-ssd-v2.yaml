@@ -1,0 +1,17 @@
+# Premium SSD v2 — modern high-end Azure managed disk.
+# AKS built-in CSI driver (disk.csi.azure.com), NOT ACS-managed.
+# Key differentiator: independent IOPS / throughput / capacity dials.
+# Zone-locked: PV lives in one AZ, pod must schedule in same AZ.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: premium-ssd-v2
+provisioner: disk.csi.azure.com
+parameters:
+  skuName: PremiumV2_LRS
+  DiskIOPSReadWrite: "10000"
+  DiskMBpsReadWrite: "200"
+  cachingMode: None
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true

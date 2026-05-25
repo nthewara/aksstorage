@@ -121,5 +121,43 @@ else
   echo "(demo-files namespace not deployed yet — skipping Azure Files checks)"
 fi
 
+# ─── 9. Premium SSD v2 (single-instance Postgres) ────────────────────────────
+c "=== Premium SSD v2 ==="
+if kubectl get sc premium-ssd-v2 >/dev/null 2>&1; then
+  ok "StorageClass premium-ssd-v2 present"
+else
+  bad "StorageClass premium-ssd-v2 missing — apply manifests/storageclass/premium-ssd-v2.yaml"
+fi
+
+if kubectl get ns demo-pgv2 >/dev/null 2>&1; then
+  # Wait briefly for STS
+  kubectl -n demo-pgv2 rollout status statefulset/postgres-v2 --timeout=180s || true
+
+  READY=$(kubectl -n demo-pgv2 get pod postgres-v2-0 \
+    -o jsonpath='{.status.containerStatuses[?(@.name=="postgres")].ready}' 2>/dev/null || echo "false")
+  if [ "$READY" = "true" ]; then
+    ok "postgres-v2-0 Ready"
+  else
+    bad "postgres-v2-0 NOT Ready (got: $READY)"
+  fi
+
+  PVC_PHASE=$(kubectl -n demo-pgv2 get pvc pg-data-postgres-v2-0 -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+  if [ "$PVC_PHASE" = "Bound" ]; then
+    ok "PVC pg-data-postgres-v2-0: Bound"
+  else
+    bad "PVC pg-data-postgres-v2-0: phase=$PVC_PHASE (expected Bound)"
+  fi
+
+  # Quick psql roundtrip
+  if kubectl -n demo-pgv2 exec postgres-v2-0 -- \
+      psql -U demo -d demo -tAc 'SELECT 1;' 2>/dev/null | grep -q '^1$'; then
+    ok "psql roundtrip (SELECT 1) succeeded"
+  else
+    bad "psql roundtrip failed — check postgres-v2 logs"
+  fi
+else
+  echo "(demo-pgv2 namespace not deployed yet — skipping Postgres v2 checks)"
+fi
+
 c "Done."
 ok "validation passed ✓"

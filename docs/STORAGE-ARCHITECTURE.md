@@ -124,14 +124,16 @@ cross-disk replication, no quorum, no resync logic. Single-writer (RWO) only.
 
 ### Side-by-side
 
-|  | Azure Disk CSI | ACS NVMe (replicated) | ACS NVMe (single) |
-|---|---|---|---|
-| Replication owner | Azure Storage (in SKU) | ACS engine (across nodes) | None (app handles it) |
-| Crosses zones | Only if ZRS | Yes, zone-aware | No |
-| Survives node loss | Yes (disk re-attaches) | Yes (transparent) | No (app rebuilds) |
-| Latency | ~1–2 ms (network) | sub-ms (local NVMe) | sub-ms |
-| Max IOPS | Up to 80K (Ultra) | 100K+ per node | 100K+ per node |
-| Multi-writer (RWX) | No (RWO only*) | No | No |
+|  | Azure Disk CSI (v1) | **Premium SSD v2** | ACS NVMe (replicated) | ACS NVMe (single) |
+|---|---|---|---|---|
+| Replication owner | Azure Storage (in SKU) | Azure Storage (LRS, 3× in-zone) | ACS engine (across nodes) | None (app handles it) |
+| Crosses zones | Only if ZRS | **No** (LRS only, no ZRS yet) | Yes, zone-aware | No |
+| Survives node loss | Yes (disk re-attaches) | Yes (same-AZ re-attach) | Yes (transparent) | No (app rebuilds) |
+| Latency | ~1–2 ms (network) | **sub-ms (~0.5 ms)** | sub-ms (local NVMe) | sub-ms |
+| Max IOPS | ~20k (P30) up to 80k (Ultra) | **80k (independent dial)** | 100K+ per node | 100K+ per node |
+| IOPS/size coupling | Tied to P-tier | **Independent — dial separately** | n/a (local) | n/a (local) |
+| Multi-writer (RWX) | No (RWO only*) | No (RWO only) | No | No |
+| Snapshots / Azure Backup | ✅ | ✅ | ❌ | ❌ |
 
 \* Disk CSI has a "shared disk" preview for RWO-multi but it's
 clustered-filesystem territory, not real RWX.
@@ -157,9 +159,91 @@ clustered-filesystem territory, not real RWX.
 - Per-VM disk attach limits (8–32 disks per VM depending on size) — this is the
   exact problem ESAN solves
 - Cross-zone failover unless you're on ZRS (and not every region has ZRS for
-  every SKU)
+  every SKU). **Premium SSD v2 has no ZRS yet (2026)** — strictly LRS
 - Latency-sensitive workloads (Cassandra, Kafka, Redis-persistent) where local
   NVMe wins by 10–100×
+
+### Where Premium SSD v2 specifically wins
+- Single-instance Postgres/MySQL/SQL Server that wants sub-ms latency without
+  running on dedicated Lsv3 + ACS
+- Workloads where the v1 "buy 4 TiB to get IOPS" anti-pattern hurts — v2's
+  independent dial typically cuts cost by ~50% for the same IOPS budget
+- Disk-snapshot / Azure Backup integration combined with NVMe-class latency
+- Apps that already replicate at the app layer (Patroni, CloudNativePG) and
+  want each replica's disk to be fast + durable on its own
+
+---
+
+## Cost worked example — 3-node Cassandra: Premium SSD v2 vs local NVMe
+
+Real trade-off question: you need 3 Cassandra nodes, RF=3 across zones,
+~500 GiB per node, ~10k sustained IOPS each. Two paths.
+
+### Path A — Premium SSD v2 + D8s_v5 syspool (durable disk)
+
+```
+3× Standard_D8s_v5            ≈ 3 × $292/mo  = $876/mo
+3× Premium SSD v2 (500 GiB, 10k IOPS, 250 MB/s)
+  capacity:  500 × $0.097 × 3                =  $145.50/mo
+  IOPS:      (10k - 3k free) × $0.0072 × 3   =  $151.20/mo
+  throughput:(250 - 125 free) × $0.084 × 3   =  $31.50/mo
+  ────────────────────────────────────────
+  disks total                                 ≈ $328/mo
+Log Analytics + LB                          ≈ $50/mo
+────────────────────────────────────────────────────
+Path A total                                ≈ $1,254/mo  (≈ $1,560/mo with overhead)
+```
+
+Latency: ~0.5–1 ms. Survives a single node loss because Cassandra RF=3
+repairs from peers; survives a zone outage because the other 2 nodes are
+in other zones. Each node's disk is durable inside its own AZ.
+
+### Path B — Local NVMe + L8s_v3 storagepool (replicated app)
+
+```
+3× Standard_L8s_v3            ≈ 3 × $385/mo  = $1,155/mo
+Local NVMe (included in VM SKU, ~1.9 TiB per node)
+  cost                                       =  $0
+Log Analytics + LB                          ≈ $50/mo
+────────────────────────────────────────────────────
+Path B total                                ≈ $1,205/mo  (≈ $1,155/mo if you tear down LB)
+```
+
+Latency: sub-100µs. Each node's NVMe is ephemeral — if a node dies, its
+data is gone and Cassandra streams a fresh replica from peers (RF=3).
+
+### The trade-off
+
+| | Path A (v2 disks) | Path B (local NVMe) |
+|---|---|---|
+| Monthly cost | ~$1,560/mo | ~$1,155/mo |
+| Latency | ~0.5–1 ms | sub-100 µs (10–100× faster) |
+| Node loss → data on that node | Survives (re-attach in same AZ) | Lost, rebuilt from peers (~minutes) |
+| Zone loss → data in that zone | Disk unreachable until AZ back | App heals; other 2 zones serve traffic |
+| Operational story | Standard managed disks | Lsv3 + ACS extension + node-pool taint |
+| When to pick | DB needs durability per-node + fewer ops moving pieces | Need every microsecond, willing to manage ACS |
+
+Delta is real: **~$400/mo extra for Path A, in exchange for ~10× latency
+and ACS-free ops**. For most non-latency-extreme workloads, Path A wins on
+simplicity. For Cassandra-class systems that already replicate, Path B is
+the textbook answer.
+
+---
+
+## Decision matrix — three picks
+
+Quick-decision summary across the durable-block options in this lab. Pick
+one based on the question on the right.
+
+| Pick | Driver | When to use |
+|---|---|---|
+| **Premium SSD v2 + AKS built-in CSI** | `disk.csi.azure.com`, `skuName: PremiumV2_LRS` | Single-instance durable DB (Postgres, MySQL, SQL Server). Need sub-ms latency + snapshots + durability-by-default. Don't want to run Lsv3 / ACS. No cross-AZ HA required (or app handles it). |
+| **Local NVMe + ACS (single replica)** | `localdisk.csi.acstor.io`, `replication: 1` | App already replicates (Cassandra RF=3, Kafka, Elastic). Need every microsecond of latency. Willing to take node loss = local-data loss because peers cover it. |
+| **ACS NVMe with `replication: 3`** | `localdisk.csi.acstor.io`, `replication: 3` | Single-pod stateful app that doesn't replicate itself, but you still want sub-ms NVMe latency. ACS keeps 3 sync copies across nodes/zones. Best of both worlds, costs 3× the local NVMe capacity. |
+
+If you're not sure: start with **Premium SSD v2**. It's the cheapest path to
+"durable, fast, low-ops" and only fails you when you genuinely need NVMe-class
+latency (in which case you'll know — and that's when you reach for ACS).
 
 ---
 

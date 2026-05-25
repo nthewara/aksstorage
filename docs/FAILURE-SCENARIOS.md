@@ -26,6 +26,7 @@ Run **`./tests/validate.sh`** between scenarios to spot drift.
 | 10 | SMB session drop / network blip | one pod's mount | Yes — CIFS client auto-reconnects |
 | 11 | Pod eviction during write (Azure Files) | one in-flight file | Yes (SMB) / brief lock window (NFS) |
 | 12 | Azure Files quota exhaustion | the shared PVC | No — expand the PVC or free space |
+| 13 | **Premium SSD v2 zonal disk failure** | one v2 PV (zone-pinned) | **No** — LRS only, no automatic cross-AZ failover |
 
 ---
 
@@ -417,6 +418,101 @@ kubectl -n demo-files exec "$POD" -- rm /usr/share/nginx/html/fill.bin
 ```
 
 No pod restart required — the share resize is transparent to mounted clients.
+
+---
+
+## 13. Premium SSD v2 — zonal disk failure
+
+**Setup**: Postgres 16 single replica on `premium-ssd-v2` SC, namespace
+`demo-pgv2`. The PV lives in one Availability Zone (e.g. `australiaeast-1`)
+and `WaitForFirstConsumer` pinned the pod to a node in that same zone.
+
+> **Key constraint**: Premium SSD v2 is **LRS only**. There is no ZRS option
+> as of 2026. The disk has 3 replicas inside a single AZ, zero across zones.
+> If the AZ hosting the disk fails, the volume is unreachable until the AZ
+> recovers. Pod anti-affinity across zones **does not help** — the disk
+> doesn't move with the pod.
+
+### Simulate the failure
+
+```bash
+# 1. Find the AZ the v2 disk lives in
+PVC=$(kubectl -n demo-pgv2 get pvc -o jsonpath='{.items[0].metadata.name}')
+PV=$(kubectl -n demo-pgv2 get pvc "$PVC" -o jsonpath='{.spec.volumeName}')
+DISK_ZONE=$(kubectl get pv "$PV" \
+  -o jsonpath='{.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[?(@.key=="topology.disk.csi.azure.com/zone")].values[0]}')
+echo "v2 disk pinned to zone: $DISK_ZONE"
+
+# 2. Cordon + drain every node in that zone — simulate full AZ outage
+NODES=$(kubectl get nodes \
+  -l topology.kubernetes.io/zone="$DISK_ZONE" \
+  -o jsonpath='{.items[*].metadata.name}')
+for NODE in $NODES; do
+  kubectl cordon "$NODE"
+  kubectl drain "$NODE" --ignore-daemonsets --delete-emptydir-data --force --timeout=5m
+done
+
+kubectl -n demo-pgv2 get pods -o wide -w
+```
+
+**Expected**:
+- Postgres pod evicted from the drained node
+- Scheduler tries to place it on another node — but every node in other AZs
+  fails the volume node-affinity check (`topology.disk.csi.azure.com/zone`)
+- Pod stays **Pending** indefinitely. `kubectl describe pod` shows:
+  `0/N nodes available: N node(s) had volume node affinity conflict`
+- The v2 disk is fine; it's just unreachable until a node comes back in its AZ
+
+```bash
+kubectl -n demo-pgv2 describe pod postgres-v2-0 | grep -A5 'Events:'
+kubectl get pv "$PV" -o yaml | grep -A10 nodeAffinity
+```
+
+### Why no automatic recovery
+
+- **No ZRS** → no zone-redundant copies to fail over to
+- **CSI driver doesn't migrate disks** → it only attaches/detaches what Azure
+  gave it
+- **Pod anti-affinity across zones is irrelevant** → the disk pins the pod,
+  not vice versa
+- **Snapshots don't fail over automatically** → you'd have to manually
+  restore a snapshot into a different AZ as a new disk
+
+### Mitigation patterns
+
+Pick one **before** you hit this scenario:
+
+1. **App-level replication across zones** (recommended for v2)
+   - Run Postgres with Patroni or CloudNativePG
+   - Each replica gets its **own** `premium-ssd-v2` PV in its **own** AZ
+   - On AZ loss, the surviving replicas elect a new primary
+   - Each disk stays LRS; durability comes from the app, not the storage tier
+
+2. **Fall back to Premium SSD v1 with ZRS** (if cross-AZ HA matters more than IOPS dial)
+   - `skuName: Premium_ZRS` — 3 copies across 3 zones
+   - Lose the v2 independent-dial pricing model
+   - Gain transparent cross-AZ failover for a single PV
+   - Higher latency (~1–2 ms vs v2's ~0.5 ms)
+
+3. **Design for zone-loss explicitly** (acceptance pattern)
+   - Document the RTO/RPO for AZ failure ("v2 single-disk RTO = duration of
+     AZ outage; RPO = 0 since the disk persists")
+   - Take regular snapshots → can restore into a different AZ manually if the
+     outage is long-lived
+   - Pair with Azure Backup for off-AZ copies
+
+### Recovery (after simulated AZ comes back)
+
+```bash
+for NODE in $NODES; do kubectl uncordon "$NODE"; done
+# Scheduler immediately places postgres-v2-0 back on a node in the original AZ.
+# Disk re-attaches; Postgres replays WAL; pod Ready within ~60s.
+```
+
+**Lesson**: Premium SSD v2 gives you NVMe-class latency + durability inside
+a zone, but the zone is the failure domain. For a true single-disk AZ-tolerant
+workload, you need Premium SSD v1 ZRS today. For v2, design HA at the app
+layer.
 
 ---
 
