@@ -37,9 +37,12 @@ done
 
 # ─── 4. Cassandra StatefulSet readiness ──────────────────────────────────────
 c "Cassandra StatefulSet"
-kubectl get ns "$NS_CASS" >/dev/null 2>&1 \
-  || { echo "(cassandra namespace not deployed yet — skipping Cassandra checks)"; exit 0; }
+if ! kubectl get ns "$NS_CASS" >/dev/null 2>&1; then
+  echo "(cassandra namespace not deployed yet — skipping Cassandra checks)"
+  SKIP_CASS=1
+fi
 
+if [ "${SKIP_CASS:-0}" != "1" ]; then
 DESIRED=$(kubectl -n "$NS_CASS" get statefulset cassandra \
   -o jsonpath='{.spec.replicas}' 2>/dev/null || echo 0)
 READY=$(kubectl -n "$NS_CASS" get statefulset cassandra \
@@ -80,6 +83,43 @@ BOUND=$(kubectl -n "$NS_CASS" get pvc --no-headers \
 [ "$BOUND" -ge 3 ] \
   && ok "$BOUND PVCs Bound" \
   || bad "only $BOUND PVCs Bound (expected ≥ 3)"
+fi  # end SKIP_CASS guard
+
+# ─── 8. Azure Files (RWX) ────────────────────────────────────────────────────
+c "=== Azure Files ==="
+if kubectl get ns demo-files >/dev/null 2>&1; then
+  PHASE=$(kubectl -n demo-files get pvc nginx-shared-pvc -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+  if [ "$PHASE" = "Bound" ]; then
+    ok "PVC: Bound"
+  else
+    bad "PVC: NOT bound (phase=$PHASE)"
+  fi
+
+  kubectl -n demo-files rollout status deploy/nginx-shared --timeout=120s
+
+  # Write from pod 0, read back from pod 1 and pod 2 to prove RWX
+  POD0=$(kubectl get pods -n demo-files -l app=nginx-shared -o jsonpath='{.items[0].metadata.name}')
+  POD1=$(kubectl get pods -n demo-files -l app=nginx-shared -o jsonpath='{.items[1].metadata.name}' 2>/dev/null || echo "")
+  POD2=$(kubectl get pods -n demo-files -l app=nginx-shared -o jsonpath='{.items[2].metadata.name}' 2>/dev/null || echo "")
+
+  kubectl exec -n demo-files "$POD0" -- sh -c 'echo "validate-$(date +%s)" > /usr/share/nginx/html/val.txt'
+
+  if [ -n "$POD1" ] && kubectl exec -n demo-files "$POD1" -- cat /usr/share/nginx/html/val.txt 2>/dev/null | grep -q validate; then
+    ok "RWX cross-pod read ($POD0 → $POD1) ✓"
+  else
+    bad "RWX cross-pod read failed ($POD0 → $POD1) ✗"
+  fi
+
+  if [ -n "$POD2" ]; then
+    if kubectl exec -n demo-files "$POD2" -- cat /usr/share/nginx/html/val.txt 2>/dev/null | grep -q validate; then
+      ok "RWX cross-pod read ($POD0 → $POD2) ✓"
+    else
+      bad "RWX cross-pod read failed ($POD0 → $POD2) ✗"
+    fi
+  fi
+else
+  echo "(demo-files namespace not deployed yet — skipping Azure Files checks)"
+fi
 
 c "Done."
 ok "validation passed ✓"

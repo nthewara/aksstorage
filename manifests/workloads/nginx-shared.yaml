@@ -1,0 +1,125 @@
+# Demonstrates RWX (ReadWriteMany) — all 3 replicas share one Azure Files SMB share.
+#
+# Each replica mounts the same PVC at /usr/share/nginx/html. The init container
+# appends `<pod-name> @ <timestamp>` to index.html so all 3 pods write to the
+# same file on the shared volume — proving multi-writer access works.
+#
+# Pre-reqs:
+#   kubectl apply -f manifests/storageclass/azure-files-premium.yaml
+#   (kubelet MI must have "Storage File Data SMB Share Contributor" at RG scope)
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo-files
+  labels:
+    app.kubernetes.io/part-of: aksstorage
+    scenario: azure-files-rwx
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nginx-shared-pvc
+  namespace: demo-files
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: acstor-azurefiles-premium
+  resources:
+    requests:
+      storage: 100Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-shared
+  namespace: demo-files
+  labels:
+    app: nginx-shared
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nginx-shared
+  template:
+    metadata:
+      labels:
+        app: nginx-shared
+    spec:
+      affinity:
+        podAntiAffinity:
+          # Prefer spreading across zones — best-effort, not required.
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: nginx-shared
+                topologyKey: topology.kubernetes.io/zone
+            - weight: 50
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: nginx-shared
+                topologyKey: kubernetes.io/hostname
+      initContainers:
+        - name: init-index
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              # Append a per-pod line to the shared index.html. All 3 replicas
+              # touch the same file — proves SMB multi-writer is working.
+              echo "${POD_NAME} @ $(date -u +%FT%TZ)" >> /usr/share/nginx/html/index.html
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          volumeMounts:
+            - name: shared
+              mountPath: /usr/share/nginx/html
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+              name: http
+          volumeMounts:
+            - name: shared
+              mountPath: /usr/share/nginx/html
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+      volumes:
+        - name: shared
+          persistentVolumeClaim:
+            claimName: nginx-shared-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-shared
+  namespace: demo-files
+  labels:
+    app: nginx-shared
+spec:
+  type: ClusterIP
+  selector:
+    app: nginx-shared
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      protocol: TCP

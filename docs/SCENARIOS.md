@@ -1,20 +1,20 @@
-# Storage Type Matrix — NVMe vs Azure Disk vs Elastic SAN
+# Storage Type Matrix — NVMe vs Azure Disk vs Elastic SAN vs Azure Files
 
 Use this table to pick the right backing storage for your workload.
 
-| Attribute              | **Local NVMe** (`local-nvme`) | **Azure Disk** (`azure-disk-acstor`) | **Elastic SAN** (`azuresan-csi`) |
-|------------------------|-------------------------------|--------------------------------------|----------------------------------|
-| **Provisioner**        | `localdisk.csi.acstor.io`     | `disk.csi.acstor.io`                 | `san.csi.azure.com`              |
-| **Backing resource**   | NVMe on Lsv3 node             | Azure Managed Disk (Premium SSD)     | Azure Elastic SAN (iSCSI)        |
-| **Typical read IOPS**  | 400k+ (direct NVMe)           | ~20k (P30 disk)                      | 5k–1M+ (scales with SAN TiB)     |
-| **Typical latency**    | sub-100µs                     | ~1ms                                 | ~1ms                             |
-| **Throughput**         | 3+ GB/s (per node)            | ~200 MB/s (per disk)                 | 200 MB/s–40 GB/s (SAN-wide)      |
-| **Durability**         | ❌ Ephemeral (node-local)     | ✅ Persistent (zone-redundant)       | ✅ Persistent (LRS)              |
-| **Survives node loss** | Only with app-level replication | ✅ Yes (disk reattaches)           | ✅ Yes                           |
-| **PVs per node**       | Unlimited (local)             | Up to 64 (VM disk limit)             | Unlimited (iSCSI, no disk limit) |
-| **Replication**        | App-level (e.g. Cassandra RF=3) | ACStor volume replication (opt.)  | Storage-level (LRS by default)   |
-| **Access mode**        | `ReadWriteOnce`               | `ReadWriteOnce`                      | `ReadWriteOnce`                  |
-| **Volume expansion**   | ✅                            | ✅                                   | ✅ (via Azure portal/CLI)        |
+| Attribute              | **Local NVMe** (`local-nvme`) | **Azure Disk** (`azure-disk-acstor`) | **Elastic SAN** (`azuresan-csi`) | **Azure Files** (`acstor-azurefiles-*`) |
+|------------------------|-------------------------------|--------------------------------------|----------------------------------|------------------------------------------|
+| **Provisioner**        | `localdisk.csi.acstor.io`     | `disk.csi.acstor.io`                 | `san.csi.azure.com`              | `file.csi.azure.com`                     |
+| **Backing resource**   | NVMe on Lsv3 node             | Azure Managed Disk (Premium SSD)     | Azure Elastic SAN (iSCSI)        | Azure Files share (SMB or NFS 4.1)       |
+| **Typical read IOPS**  | 400k+ (direct NVMe)           | ~20k (P30 disk)                      | 5k–1M+ (scales with SAN TiB)     | 400–100k (scales with share size, tier)  |
+| **Typical latency**    | sub-100µs                     | ~1ms                                 | ~1ms                             | 1–3ms Premium / 5–10ms Standard          |
+| **Throughput**         | 3+ GB/s (per node)            | ~200 MB/s (per disk)                 | 200 MB/s–40 GB/s (SAN-wide)      | 100 MB/s Standard, up to 10 GB/s Premium |
+| **Durability**         | ❌ Ephemeral (node-local)     | ✅ Persistent (zone-redundant)       | ✅ Persistent (LRS)              | ✅ Persistent (LRS/ZRS)                  |
+| **Survives node loss** | Only with app-level replication | ✅ Yes (disk reattaches)           | ✅ Yes                           | ✅ Yes (any node remounts the share)     |
+| **PVs per node**       | Unlimited (local)             | Up to 64 (VM disk limit)             | Unlimited (iSCSI, no disk limit) | Unlimited (network mount, no disk limit) |
+| **Replication**        | App-level (e.g. Cassandra RF=3) | ACStor volume replication (opt.)  | Storage-level (LRS by default)   | Storage-level (LRS/ZRS at share)         |
+| **Access mode**        | `ReadWriteOnce`               | `ReadWriteOnce`                      | `ReadWriteOnce`                  | **`ReadWriteMany`** ✅                   |
+| **Volume expansion**   | ✅                            | ✅                                   | ✅ (via Azure portal/CLI)        | ✅                                       |
 
 ---
 
@@ -39,6 +39,14 @@ Use this table to pick the right backing storage for your workload.
 - Burst scenarios where fast volume attach/detach matters
 - Cost model: provision capacity once at TiB level, share across many volumes
 - ⚠️ **Not for**: ultra-low latency (still ~1ms iSCSI round-trip)
+
+### Azure Files → **Shared content, web farms, CI caches, ML datasets**
+- You need **ReadWriteMany** — multiple pods on multiple nodes mounting one volume
+- Shared web/static content across an nginx fleet, CMS uploads, build caches
+- POSIX-light (SMB) is enough — or pick NFS 4.1 for strict POSIX (hard links, locks)
+- Cost-tunable: Standard tier for dev/test, Premium for prod latency
+- ⚠️ **Not for**: ultra-low latency block storage (use NVMe), single-writer DBs (use Azure Disk)
+- ⚠️ **NFS variant requires** a private endpoint in the AKS VNet — see `docs/AZURE-FILES.md` §3
 
 ---
 
@@ -67,3 +75,4 @@ Use this table to pick the right backing storage for your workload.
 | Local NVMe | App-level only. Use Cassandra RF=3, Kafka replication factor ≥ 2. Do NOT rely on ACStor volume replication for primary durability. |
 | Azure Disk | Storage-level (zone-redundant managed disk). Optional ACStor volume replication for extra HA. |
 | Elastic SAN | LRS at SAN level. App-level replication optional (adds write amplification vs. ESAN's built-in durability). |
+| Azure Files | LRS by default at the share level; switch to ZRS for zone redundancy. Multi-region → use share snapshots + AzCopy or Azure Backup vault. |
