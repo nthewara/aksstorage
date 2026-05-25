@@ -35,7 +35,7 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
     kubernetesVersion: kubernetesVersion
     dnsPrefix: clusterName
     enableRBAC: true
-    disableLocalAccounts: true
+    disableLocalAccounts: !empty(adminAadObjectId)
     oidcIssuerProfile: {
       enabled: true
     }
