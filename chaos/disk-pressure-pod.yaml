@@ -1,0 +1,25 @@
+# Fill the PVC up — useful for testing pool-exhaustion behavior.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: disk-filler
+  namespace: acstor-demo
+spec:
+  restartPolicy: Never
+  containers:
+    - name: fill
+      image: mcr.microsoft.com/cbl-mariner/busybox:2.0
+      command: [/bin/sh, -c]
+      args:
+        - |
+          set -eu
+          # Write 18GiB into a 20GiB PVC to push it near full.
+          dd if=/dev/zero of=/data/fill.bin bs=1M count=18432 status=progress
+          ls -lh /data
+          sleep 600
+      volumeMounts:
+        - { name: d, mountPath: /data }
+  volumes:
+    - name: d
+      persistentVolumeClaim:
+        claimName: pg-data

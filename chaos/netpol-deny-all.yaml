@@ -1,0 +1,10 @@
+# Block all ingress/egress between pods in acstor-demo. Simulates a network
+# partition that would impact a replicated storage pool's quorum.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all
+  namespace: acstor-demo
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
