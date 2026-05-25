@@ -61,6 +61,7 @@ docs/
   STORAGE-ARCHITECTURE.md  Mental model — ephemeral vs persistent, replication ownership, CSI comparison
   SCENARIOS.md         Picker matrix — ACS-managed (NVMe, ESAN) vs built-in CSI (Disk, Files)
   ELASTIC-SAN.md       ESAN bring-up + multi-PV demo
+  PREMIUM-SSD-V2.md    Premium SSD v2 — independent IOPS dial + Postgres demo (single-instance DBs)
   FAILURE-SCENARIOS.md Cassandra + NVMe specific failure exercises
   AZURE-FILES.md       Azure Files (SMB + NFS) RWX walkthrough + nginx-shared demo
   COST-CLEANUP.md      Per-scenario cost shape + teardown playbook
@@ -84,6 +85,7 @@ comparison.
 | Local NVMe (primary) | `local-nvme` | **ACS v2.1** (`ephemeralDisk`) | Cassandra, Redis, Kafka — app-level replication |
 | Elastic SAN (optional) | `azuresan-csi` | **ACS v2.1** (`elasticSan`) | DBaaS / 100s of PVs, bypass disk-attach limits |
 | Azure Disk | `azure-disk` | AKS built-in CSI (`disk.csi.azure.com`) | Postgres — durable, reattachable block |
+| Premium SSD v2 | `premium-ssd-v2` | AKS built-in CSI (`disk.csi.azure.com`, modern SKU) | Single-instance DBs needing sub-ms + durability → [`docs/PREMIUM-SSD-V2.md`](docs/PREMIUM-SSD-V2.md) |
 | Azure Files | `acstor-azurefiles-{standard,premium,nfs}` | AKS built-in CSI (`file.csi.azure.com`) | RWX / SMB / NFS — shared content, web farms, CI caches → [`docs/AZURE-FILES.md`](docs/AZURE-FILES.md) |
 
 → Full matrix: [`docs/SCENARIOS.md`](docs/SCENARIOS.md)

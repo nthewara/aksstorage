@@ -1,0 +1,44 @@
+# pgbench benchmark Job — drives the Postgres v2 STS for ~3 min.
+# Prints TPS + latency to stdout.
+#
+# Apply:
+#   kubectl apply -f tests/pgbench.yaml
+#   kubectl -n demo-pgv2 logs -f job/pgbench
+#
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pgbench
+  namespace: demo-pgv2
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: pgbench
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: pgbench
+          image: postgres:16-alpine
+          command: [pgbench]
+          args:
+            - -h
+            - postgres-v2
+            - -U
+            - demo
+            - -c
+            - "16"
+            - -j
+            - "4"
+            - -T
+            - "180"
+            - --progress=10
+            - demo
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-v2-secret
+                  key: POSTGRES_PASSWORD
