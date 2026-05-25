@@ -16,8 +16,8 @@ param prefix string = 'acsl'
 @description('Suffix appended to resource names (kept short for uniqueness).')
 param suffix string = uniqueString(resourceGroup().id)
 
-@description('Kubernetes version. 1.31+ recommended for ACS v2.1.')
-param kubernetesVersion string = '1.31'
+@description('Kubernetes version. 1.34+ recommended for ACS v2.1 (1.31 is now LTS-only — Premium tier required).')
+param kubernetesVersion string = '1.34'
 
 @description('System node pool VM size. Small — no storage role.')
 param systemVmSize string = 'Standard_D4s_v5'

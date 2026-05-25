@@ -4,7 +4,7 @@
   "parameters": {
     "location": { "value": "australiaeast" },
     "prefix": { "value": "acsl" },
-    "kubernetesVersion": { "value": "1.31" },
+    "kubernetesVersion": { "value": "1.34" },
     "systemVmSize": { "value": "Standard_D4s_v5" },
     "systemNodeCount": { "value": 2 },
     "storagepoolVmSize": { "value": "Standard_L8s_v3" },
