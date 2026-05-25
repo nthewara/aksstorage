@@ -60,7 +60,7 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
         vmSize: systemVmSize
         osType: 'Linux'
         osDiskSizeGB: 128
-        osDiskType: 'Ephemeral'
+        osDiskType: 'Managed'
         type: 'VirtualMachineScaleSets'
         vnetSubnetID: subnetId
         nodeLabels: {}
