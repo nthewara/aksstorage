@@ -1,0 +1,27 @@
+# StorageClass: Elastic SAN — third scenario (high-density PV, many volumes).
+#
+# Key advantage: iSCSI bypasses VM disk-attach limits; consolidate hundreds of
+# PVs under a single SAN. Best for DBaaS / multi-tenant platforms.
+#
+# Prerequisites:
+#   1. Deploy with deployElasticSan=true:
+#        az deployment group create -g $RG -f infra/main.bicep \
+#          -p @infra/main.parameters.json deployElasticSan=true
+#   2. Enable ESAN storage type on the cluster:
+#        ESAN_ID=$(az deployment group show -g $RG -n main \
+#          --query properties.outputs.esanId.value -o tsv)
+#        az aks update -g $RG -n $CLUSTER \
+#          --enable-azure-container-storage elasticSan \
+#          --elastic-san-resource-id "$ESAN_ID"
+#   3. Apply this manifest: kubectl apply -f manifests/storageclass/elastic-san.yaml
+#
+# See docs/ELASTIC-SAN.md for full walkthrough.
+#
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: azuresan-csi
+provisioner: san.csi.azure.com
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+allowVolumeExpansion: true

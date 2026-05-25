@@ -1,0 +1,173 @@
+# Cassandra StatefulSet — PRIMARY workload for this lab.
+#
+# 3 replicas spread across zones 1/2/3 on the storagepool node pool.
+# Storage: local-nvme StorageClass (ephemeral NVMe via ACStor v2.1).
+# Replication: Cassandra handles RF=3 app-level replication across zones.
+# ACStor volumes are single-replica by default (let Cassandra replicate, not ACStor).
+#
+# NOTE: The upstream Azure Samples repo uses Bitnami Helm for convenience.
+# This manifest is the raw Kubernetes equivalent for full visibility.
+# For Helm path see docs/LAB.md §5a.
+#
+# Seed list uses the headless service DNS: cassandra-0.cassandra.cassandra.svc.cluster.local
+# GossipingPropertyFileSnitch enables rack-aware placement across AZs.
+#
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cassandra
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cassandra-config
+  namespace: cassandra
+data:
+  cassandra.yaml: |
+    cluster_name: 'acstor-lab'
+    num_tokens: 16
+    endpoint_snitch: GossipingPropertyFileSnitch
+    seed_provider:
+      - class_name: org.apache.cassandra.locator.SimpleSeedProvider
+        parameters:
+          - seeds: "cassandra-0.cassandra.cassandra.svc.cluster.local"
+    listen_address: ""
+    rpc_address: "0.0.0.0"
+    broadcast_rpc_address: "1.2.3.4"
+    start_native_transport: true
+    native_transport_port: 9042
+    data_file_directories:
+      - /var/lib/cassandra/data
+    commitlog_directory: /var/lib/cassandra/commitlog
+    hints_directory: /var/lib/cassandra/hints
+    saved_caches_directory: /var/lib/cassandra/saved_caches
+  jvm.options: |
+    -Xms2G
+    -Xmx2G
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cassandra
+  namespace: cassandra
+  labels:
+    app: cassandra
+spec:
+  clusterIP: None
+  selector:
+    app: cassandra
+  ports:
+    - name: cql
+      port: 9042
+    - name: internode
+      port: 7000
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: cassandra
+  namespace: cassandra
+  labels:
+    app: cassandra
+spec:
+  serviceName: cassandra
+  replicas: 3
+  selector:
+    matchLabels:
+      app: cassandra
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: cassandra
+    spec:
+      terminationGracePeriodSeconds: 60
+      # Schedule on storagepool nodes (Lsv3 NVMe). Tolerate the NoSchedule taint.
+      nodeSelector:
+        kubernetes.azure.com/agentpool: storagepool
+      tolerations:
+        - key: storage
+          operator: Equal
+          value: nvme
+          effect: NoSchedule
+      # Anti-affinity: one Cassandra pod per AZ for zone-level redundancy.
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: cassandra
+              topologyKey: topology.kubernetes.io/zone
+      containers:
+        - name: cassandra
+          image: cassandra:4.1
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: CASSANDRA_SEEDS
+              value: cassandra-0.cassandra.cassandra.svc.cluster.local
+            - name: CASSANDRA_CLUSTER_NAME
+              value: acstor-lab
+            - name: CASSANDRA_DC
+              value: australiaeast
+            - name: CASSANDRA_RACK
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['topology.kubernetes.io/zone']
+            - name: MAX_HEAP_SIZE
+              value: "2G"
+            - name: HEAP_NEWSIZE
+              value: "400M"
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          ports:
+            - containerPort: 7000
+              name: internode
+            - containerPort: 9042
+              name: cql
+          resources:
+            requests:
+              cpu: "2"
+              memory: "4Gi"
+            limits:
+              cpu: "4"
+              memory: "8Gi"
+          readinessProbe:
+            exec:
+              command: ["/bin/bash", "-c", "nodetool status | grep -E '^UN'"]
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5
+          livenessProbe:
+            exec:
+              command: ["/bin/bash", "-c", "nodetool status"]
+            initialDelaySeconds: 180
+            periodSeconds: 60
+            timeoutSeconds: 20
+            failureThreshold: 3
+          volumeMounts:
+            - name: cassandra-data
+              mountPath: /var/lib/cassandra
+            - name: config
+              mountPath: /etc/cassandra/cassandra.yaml
+              subPath: cassandra.yaml
+            - name: config
+              mountPath: /etc/cassandra/jvm.options
+              subPath: jvm.options
+      volumes:
+        - name: config
+          configMap:
+            name: cassandra-config
+  volumeClaimTemplates:
+    - metadata:
+        name: cassandra-data
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: local-nvme
+        resources:
+          requests:
+            storage: 50Gi
