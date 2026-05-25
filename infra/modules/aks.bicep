@@ -6,7 +6,13 @@ param systemNodeCount int
 param subnetId string
 param logAnalyticsWorkspaceId string
 param adminAadObjectId string
-param enableAcstorViaStorageProfile bool
+
+// v2.1: storagepool node pool params
+@description('VM size for the dedicated storage node pool (must support local NVMe).')
+param storagepoolVmSize string = 'Standard_L8s_v3'
+
+@description('Number of nodes in the storage node pool. 3 = one per zone.')
+param storagepoolNodeCount int = 3
 
 var clusterName = 'aks-${nameBase}'
 var uaiName = 'id-aks-${nameBase}'
@@ -47,6 +53,7 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
     }
     agentPoolProfiles: [
       {
+        // System pool: lightweight, no storage role
         name: 'syspool'
         mode: 'System'
         count: systemNodeCount
@@ -56,9 +63,30 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
         osDiskType: 'Ephemeral'
         type: 'VirtualMachineScaleSets'
         vnetSubnetID: subnetId
+        nodeLabels: {}
+      }
+      {
+        // Storage pool: Lsv3 NVMe nodes, spread across zones 1/2/3
+        // ACStor components are targeted here via the local-nvme StorageClass
+        // annotation: storageoperator.acstor.io/nodeAffinity (agentpool=storagepool)
+        name: 'storagepool'
+        mode: 'User'
+        count: storagepoolNodeCount
+        vmSize: storagepoolVmSize
+        osType: 'Linux'
+        osDiskSizeGB: 128
+        osDiskType: 'Managed'
+        type: 'VirtualMachineScaleSets'
+        vnetSubnetID: subnetId
+        availabilityZones: ['1', '2', '3']
         nodeLabels: {
           'acstor.azure.com/io-engine': 'acstor'
         }
+        // Optional taint to keep non-storage workloads off Lsv3 nodes.
+        // Remove if you want general workloads to run here too.
+        nodeTaints: [
+          'storage=nvme:NoSchedule'
+        ]
       }
     ]
     networkProfile: {
@@ -69,14 +97,12 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
       serviceCidr: '10.50.0.0/16'
       dnsServiceIP: '10.50.0.10'
     }
-    storageProfile: enableAcstorViaStorageProfile ? {
+    storageProfile: {
       diskCSIDriver: { enabled: true }
       fileCSIDriver: { enabled: true }
       snapshotController: { enabled: true }
-    } : {
-      diskCSIDriver: { enabled: true }
-      fileCSIDriver: { enabled: true }
-      snapshotController: { enabled: true }
+      // ACStor v2.1: do NOT enable via storageProfile — use CLI post-deploy
+      // for full v2.1 modular-install support (Flow A or B). See docs/LAB.md.
     }
     addonProfiles: {
       omsagent: {
@@ -108,8 +134,7 @@ resource diag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
   }
 }
 
-// Contributor on the current RG for the kubelet identity (lets ACStor attach disks via
-// the kubelet MI). Role name is derived from cluster name so it stays deterministic.
+// Contributor on the current RG for the kubelet identity (lets ACStor attach disks).
 resource kubeletRgContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(resourceGroup().id, clusterName, 'kubelet-contributor')
   scope: resourceGroup()

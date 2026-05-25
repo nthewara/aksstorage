@@ -1,0 +1,37 @@
+# StorageClass: local NVMe (ephemeral disk) — primary storage type for this lab.
+#
+# v2.1 features used:
+#   • provisioner: localdisk.csi.acstor.io  (local CSI driver)
+#   • storageoperator.acstor.io/nodeAffinity annotation — pins local CSI driver
+#     DaemonSet pods to the 'storagepool' node pool (Standard_L8s_v3 NVMe nodes).
+#     Without this annotation the driver would spread to all nodes.
+#   • WaitForFirstConsumer — volumes bound on the same node as the consuming pod.
+#
+# Prerequisites:
+#   ACStor enabled for ephemeralDisk (Flow A):
+#     az aks update -g $RG -n $CLUSTER \
+#       --enable-azure-container-storage ephemeralDisk \
+#       --storage-pool-option NVMe \
+#       --azure-container-storage-nodepools storagepool
+#   OR via official docs syntax:
+#     az aks update -g $RG -n $CLUSTER --enable-azure-container-storage ephemeralDisk
+#
+# Match expressions are case-sensitive. Verify your agentpool label with:
+#   kubectl get nodes -L kubernetes.azure.com/agentpool
+#
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-nvme
+  annotations:
+    storageoperator.acstor.io/nodeAffinity: |
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: kubernetes.azure.com/agentpool
+            operator: In
+            values: [storagepool]
+provisioner: localdisk.csi.acstor.io
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
