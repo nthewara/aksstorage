@@ -89,14 +89,18 @@ You should see:
 # Primary path: local NVMe on the storagepool node pool
 az aks update -g "$RG" -n "$CLUSTER" \
   --enable-azure-container-storage ephemeralDisk \
-  --storage-pool-option NVMe \
   --azure-container-storage-nodepools storagepool
 ```
 
-> **Official docs alternative** (simpler, same result):
-> `az aks update -g $RG -n $CLUSTER --enable-azure-container-storage ephemeralDisk`
-> The `--storage-pool-option` and `--azure-container-storage-nodepools` flags are
-> task-spec extensions that allow explicit nodepool targeting.
+> **ACS v2.1 change**: the legacy `--storage-pool-option NVMe` flag has been
+> **removed** in v2.x. The storage type (`ephemeralDisk`, `elasticSan`) now
+> implies the pool option — if you pass `--storage-pool-option` you'll get:
+> *"The latest version of Azure Container Storage does not require or support
+> a --storage-pool-option value."* Just drop the flag.
+>
+> `--azure-container-storage-nodepools` is still supported and pins the CSI
+> driver / storage pool to a specific nodepool (the Lsv3 `storagepool` in our
+> lab). Without it, ACS picks a default which may not be what you want.
 
 This installs the ACStor installer + local NVMe CSI driver and creates a default
 `local-csi` StorageClass. Wait ~5 minutes for the extension to converge.

@@ -110,7 +110,6 @@ az aks get-credentials -g "$RG" -n "$CLUSTER" --overwrite-existing
 # v2.1 Flow A — enable + ephemeralDisk upfront
 az aks update -g "$RG" -n "$CLUSTER" \
   --enable-azure-container-storage ephemeralDisk \
-  --storage-pool-option NVMe \
   --azure-container-storage-nodepools storagepool
 
 kubectl apply -f manifests/storageclass/local-nvme.yaml
