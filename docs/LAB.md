@@ -164,21 +164,53 @@ kubectl -n kube-system get pods -o wide | grep -E 'localdisk|local-csi'
 
 ---
 
-## 5a. Deploy Cassandra — Bitnami Helm (recommended)
+## 5. Deploy Cassandra
 
-The upstream Azure Samples repo uses the Bitnami chart. Simplest production-like path:
+> ⚠️ **Bitnami Helm chart is no longer functional** (since Aug 28 2025)
+>
+> Broadcom/Bitnami pulled the public Cassandra container image as part of their
+> catalog reorganization. The chart at `oci://registry-1.docker.io/bitnamicharts/cassandra`
+> still exists but the images it references (`docker.io/bitnami/cassandra:*`)
+> now return **404**. Cassandra is **not** in the free "Bitnami Secure Images"
+> subset (which only includes ~10 charts like postgresql, redis, nginx).
+>
+> **Use the raw manifest path (§5a) instead.** It uses the official upstream
+> `cassandra:4.1` image from Docker Hub, which is unaffected.
+
+### 5a. Raw manifest (recommended)
+
+Full control over the StatefulSet, uses the official Apache Cassandra image:
 
 ```bash
+kubectl apply -f manifests/workloads/cassandra-statefulset.yaml
+kubectl -n cassandra get pods -w
+```
+
+Wait for all 3 pods to be `Running` and `1/1 Ready` (~3–5 minutes for the data
+dirs to initialize and the ring to form). Pods come up in order (`cassandra-0`
+first, then `-1`, then `-2`) due to `podManagementPolicy: OrderedReady`.
+
+The manifest pins each pod to a different AZ via pod anti-affinity
+(`topologyKey: topology.kubernetes.io/zone`), so you'll see one pod per
+storagepool node — matching the 3-zone deployment.
+
+### 5b. Bitnami Helm (broken — workaround only if you must)
+
+Kept for reference. If you really want to use the Helm chart, you have to
+point each image at the archived `bitnamilegacy` registry:
+
+```bash
+# WARNING: bitnamilegacy receives no updates or CVE patches. Lab use only.
 helm install cassandra \
   --namespace cassandra --create-namespace \
+  --set image.registry=docker.io \
+  --set image.repository=bitnamilegacy/cassandra \
+  --set volumePermissions.image.registry=docker.io \
+  --set volumePermissions.image.repository=bitnamilegacy/os-shell \
   --set replicaCount=3 \
   --set global.storageClass=local-nvme \
   --set persistence.storageClass=local-nvme \
   --set persistence.size=50Gi \
-  --set resources.limits.cpu=4 \
-  --set resources.limits.memory=8Gi \
-  --set resources.requests.cpu=2 \
-  --set resources.requests.memory=4Gi \
   --set nodeSelector."kubernetes\.azure\.com/agentpool"=storagepool \
   --set tolerations[0].key=storage \
   --set tolerations[0].operator=Equal \
@@ -187,16 +219,9 @@ helm install cassandra \
   oci://registry-1.docker.io/bitnamicharts/cassandra
 ```
 
-## 5b. Deploy Cassandra — raw manifest
-
-For full visibility into the StatefulSet spec:
-
-```bash
-kubectl apply -f manifests/workloads/cassandra-statefulset.yaml
-kubectl -n cassandra get pods -w
-```
-
-Wait for all 3 pods to be `Running` and `1/1 Ready` (~3-5 minutes for data dirs to init).
+For anything beyond this lab, use the official Apache Cassandra image directly
+or switch to the [K8ssandra Operator](https://docs.k8ssandra.io/) (a proper
+Cassandra-on-Kubernetes solution).
 
 ---
 
