@@ -1,0 +1,13 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": { "value": "australiaeast" },
+    "prefix": { "value": "acsl" },
+    "kubernetesVersion": { "value": "1.30" },
+    "systemVmSize": { "value": "Standard_D4s_v5" },
+    "systemNodeCount": { "value": 3 },
+    "adminAadObjectId": { "value": "" },
+    "enableAcstorViaStorageProfile": { "value": false }
+  }
+}
