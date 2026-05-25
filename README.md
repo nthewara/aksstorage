@@ -57,7 +57,8 @@ manifests/
 chaos/                 NetworkPolicy + disk-filler
 docs/
   LAB.md               Full step-by-step (Cassandra NVMe primary path)
-  SCENARIOS.md         NVMe vs AzureDisk vs ESAN matrix
+  STORAGE-ARCHITECTURE.md  Mental model — ephemeral vs persistent, replication ownership, CSI comparison
+  SCENARIOS.md         Picker matrix — NVMe vs AzureDisk vs ESAN vs Files
   ELASTIC-SAN.md       ESAN bring-up + multi-PV demo
   FAILURE-SCENARIOS.md Cassandra + NVMe specific failure exercises
   AZURE-FILES.md       Azure Files (SMB + NFS) RWX walkthrough + nginx-shared demo
@@ -79,6 +80,7 @@ tests/
 | Azure Files | `acstor-azurefiles-{standard,premium,nfs}` | RWX / SMB / NFS — shared content, web farms, CI caches → [`docs/AZURE-FILES.md`](docs/AZURE-FILES.md) |
 
 → Full matrix: [`docs/SCENARIOS.md`](docs/SCENARIOS.md)
+→ Concepts/why: [`docs/STORAGE-ARCHITECTURE.md`](docs/STORAGE-ARCHITECTURE.md)
 
 ---
 

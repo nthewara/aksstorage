@@ -1,8 +1,12 @@
 # Storage Architecture — How the Pieces Fit Together
 
-Reference doc explaining the mental model behind the storage choices in this lab.
-Covers what's ephemeral vs persistent, who owns replication, and how the CSI
-drivers compare.
+Reference doc explaining the **mental model** behind the storage choices in
+this lab. Covers what's ephemeral vs persistent, who owns replication, and how
+the CSI drivers compare.
+
+If you just want to **pick** a storage type for a workload, go to
+[`SCENARIOS.md`](SCENARIOS.md) — it has the picker matrix, per-workload
+recommendations, and cost shape.
 
 ---
 

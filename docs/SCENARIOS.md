@@ -1,6 +1,9 @@
 # Storage Type Matrix — NVMe vs Azure Disk vs Elastic SAN vs Azure Files
 
-Use this table to pick the right backing storage for your workload.
+Use this table to **pick** the right backing storage for your workload.
+For the *why* behind the picks (ephemeral vs persistent, who owns
+replication, how the CSI drivers compare), see
+[`STORAGE-ARCHITECTURE.md`](STORAGE-ARCHITECTURE.md).
 
 | Attribute              | **Local NVMe** (`local-nvme`) | **Azure Disk** (`azure-disk-acstor`) | **Elastic SAN** (`azuresan-csi`) | **Azure Files** (`acstor-azurefiles-*`) |
 |------------------------|-------------------------------|--------------------------------------|----------------------------------|------------------------------------------|
