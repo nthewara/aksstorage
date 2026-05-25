@@ -233,20 +233,22 @@ the textbook answer.
 
 ---
 
-## Decision matrix — three picks
+## Decision matrix — four picks
 
 Quick-decision summary across the durable-block options in this lab. Pick
 one based on the question on the right.
 
 | Pick | Driver | When to use |
 |---|---|---|
-| **Premium SSD v2 + AKS built-in CSI** | `disk.csi.azure.com`, `skuName: PremiumV2_LRS` | Single-instance durable DB (Postgres, MySQL, SQL Server). Need sub-ms latency + snapshots + durability-by-default. Don't want to run Lsv3 / ACS. No cross-AZ HA required (or app handles it). |
+| **Premium SSD v2 + AKS built-in CSI** | `disk.csi.azure.com`, `skuName: PremiumV2_LRS` | Single-instance durable DB (Postgres, MySQL, SQL Server). Need sub-ms latency + snapshots + durability-by-default + independent IOPS dial. Don't want to run Lsv3 / ACS. No cross-AZ HA required (or app handles it). |
+| **Premium SSD v1 ZRS + AKS built-in CSI** | `disk.csi.azure.com`, `skuName: Premium_ZRS` | Single-instance DB that **must survive an AZ failure** and you can't / won't add app-level replication. ~ms latency is fine; IOPS coupled to size. The only built-in option for cross-zone block HA. |
 | **Local NVMe + ACS (single replica)** | `localdisk.csi.acstor.io`, `replication: 1` | App already replicates (Cassandra RF=3, Kafka, Elastic). Need every microsecond of latency. Willing to take node loss = local-data loss because peers cover it. |
 | **ACS NVMe with `replication: 3`** | `localdisk.csi.acstor.io`, `replication: 3` | Single-pod stateful app that doesn't replicate itself, but you still want sub-ms NVMe latency. ACS keeps 3 sync copies across nodes/zones. Best of both worlds, costs 3× the local NVMe capacity. |
 
 If you're not sure: start with **Premium SSD v2**. It's the cheapest path to
 "durable, fast, low-ops" and only fails you when you genuinely need NVMe-class
-latency (in which case you'll know — and that's when you reach for ACS).
+latency (→ reach for ACS) or AZ-tolerant single-disk HA (→ reach for Premium
+SSD v1 ZRS).
 
 ---
 

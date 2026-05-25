@@ -519,6 +519,69 @@ layer.
 
 ---
 
+## 14 — Zone failure with **Premium SSD v1 ZRS disk** (graceful failover)
+
+Contrast scenario to §13: same single-instance Postgres, but on `premium-ssd-zrs`.
+The whole point of ZRS is that this scenario *works*.
+
+### Setup
+```bash
+kubectl apply -f manifests/storageclass/premium-ssd-zrs.yaml
+kubectl apply -f manifests/workloads/postgres-zrs-statefulset.yaml
+# wait until Ready, then seed:
+kubectl -n demo-pgzrs exec postgres-zrs-0 -- pgbench -i -s 50 -U demo demo
+```
+
+### Hypothesis
+- PVC stays Bound during AZ outage — ZRS keeps 2/3 replicas alive in surviving AZs
+- Pod reschedules to a node in a different AZ
+- Disk re-attaches to the new node, Postgres replays WAL, comes back Ready
+- **Zero data loss, RTO = pod reschedule + WAL replay (~60–90 s)**
+
+### Execute
+```bash
+# 1. Identify pod's current zone
+ZONE=$(kubectl -n demo-pgzrs get pod postgres-zrs-0 -o jsonpath='{.spec.nodeName}' \
+  | xargs -I{} kubectl get node {} -o jsonpath='{.metadata.labels.topology\.kubernetes\.io/zone}')
+echo "Cordoning zone $ZONE"
+
+# 2. Cordon every node in that zone
+kubectl get nodes -l topology.kubernetes.io/zone=$ZONE -o name | xargs -I{} kubectl cordon {}
+
+# 3. Evict the pod (simulates node loss)
+kubectl -n demo-pgzrs delete pod postgres-zrs-0
+
+# 4. Watch it come back in a different zone
+kubectl -n demo-pgzrs get pod -o wide -w
+```
+
+### Verify data integrity
+```bash
+kubectl -n demo-pgzrs exec postgres-zrs-0 -- psql -U demo -c \
+  "SELECT count(*) FROM pgbench_accounts"
+# expect 5000000 — same as before the "AZ failure"
+```
+
+### Recovery (un-simulate AZ outage)
+```bash
+kubectl get nodes -l topology.kubernetes.io/zone=$ZONE -o name | xargs -I{} kubectl uncordon {}
+```
+
+### Comparison with §13 (v2 zonal failure)
+| | v2 LRS (§13) | v1 ZRS (§14) |
+|---|---|---|
+| Pod state after AZ loss | Pending forever | Reschedules in ~30 s |
+| PVC | Bound but inaccessible | Bound, reattaches |
+| Data loss | None (disk persists) | None |
+| Recovery action | Wait for AZ / restore from snapshot | Automatic |
+| RTO | = AZ outage duration | ~60–90 s |
+
+**Lesson**: ZRS pays for itself when the workload can't replicate at the app
+layer. For Cassandra/Kafka the math flips — use NVMe LRS + app RF=3 instead.
+
+
+---
+
 ## Observation cheatsheet
 
 ```bash

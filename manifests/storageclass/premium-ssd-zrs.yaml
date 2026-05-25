@@ -1,0 +1,39 @@
+# Premium SSD v1 with ZRS (zone-redundant block storage).
+#
+# AKS built-in CSI driver (disk.csi.azure.com), NOT ACS-managed.
+#
+# Why this exists alongside `azure-disk` (LRS) and `premium-ssd-v2`:
+#   - `azure-disk` (Premium_LRS) → one zone, no cross-zone HA
+#   - `premium-ssd-v2` (PremiumV2_LRS) → modern IOPS dial but LRS-only,
+#     no ZRS supported for v2 managed disks
+#   - **THIS SC (Premium_ZRS)** → 3 synchronous copies across 3 AZs,
+#     disk survives a full zone outage and can re-attach to a pod in
+#     a surviving zone. Best built-in option for "single-instance DB
+#     that must survive AZ loss"
+#
+# Trade-offs vs Premium SSD v2:
+#   - Higher write latency (synchronous cross-zone replication, ~ms tax)
+#   - IOPS/throughput tied to disk size (P30 = 1 TiB → 5000 IOPS fixed,
+#     no independent dial)
+#   - Slightly higher cost per GB than v1 LRS, lower than v2 at low IOPS
+#
+# Use cases:
+#   - Stateful apps that need cross-zone HA without app-level replication
+#   - Shared disks across VMs (Premium_ZRS supports shared disk, v2 does not)
+#   - Workloads tolerant of ~ms latency that prioritize availability
+#
+# Topology:
+#   `volumeBindingMode: WaitForFirstConsumer` is mandatory — the PV
+#   needs to know which zone the pod lands in before provisioning,
+#   even with ZRS, because the disk metadata gets a primary zone.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: premium-ssd-zrs
+provisioner: disk.csi.azure.com
+parameters:
+  skuName: Premium_ZRS
+  cachingMode: ReadOnly
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true

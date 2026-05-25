@@ -1,0 +1,121 @@
+# Demo: Postgres single instance backed by Premium SSD v1 ZRS.
+#
+# Difference from postgres-v2-statefulset.yaml:
+#   - SC = premium-ssd-zrs (ZRS, cross-zone replication)
+#   - No independent IOPS provisioning (tied to disk size — 100 GiB = P10 = 500 IOPS)
+#   - Pod survives full AZ failure: PVC remains Bound, pod reschedules to
+#     a surviving zone and re-attaches the disk
+#
+# Run:
+#   kubectl apply -f manifests/workloads/postgres-zrs-statefulset.yaml
+#   kubectl -n demo-pgzrs get pod,pvc -o wide
+#
+# AZ failover test:
+#   1. Identify the zone the pod is in: kubectl -n demo-pgzrs get pod -o wide
+#   2. Cordon + drain all nodes in that zone
+#   3. Watch pod come back up in another zone with same data:
+#        kubectl -n demo-pgzrs get events -w
+#   4. Confirm data integrity:
+#        kubectl -n demo-pgzrs exec postgres-zrs-0 -- psql -U demo -c "SELECT count(*) FROM pgbench_accounts"
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo-pgzrs
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-zrs-config
+  namespace: demo-pgzrs
+data:
+  POSTGRES_DB: demo
+  POSTGRES_USER: demo
+  PGDATA: /var/lib/postgresql/data/pgdata
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-zrs-secret
+  namespace: demo-pgzrs
+type: Opaque
+stringData:
+  # Lab-only credentials — do not reuse in any real environment.
+  POSTGRES_PASSWORD: demopass
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-zrs
+  namespace: demo-pgzrs
+  labels:
+    app: postgres-zrs
+spec:
+  ports:
+    - port: 5432
+      name: postgres
+  clusterIP: None
+  selector:
+    app: postgres-zrs
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-zrs
+  namespace: demo-pgzrs
+spec:
+  serviceName: postgres-zrs
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-zrs
+  template:
+    metadata:
+      labels:
+        app: postgres-zrs
+    spec:
+      # Run on syspool — workload is latency-tolerant, no need for Lsv3
+      nodeSelector:
+        kubernetes.azure.com/agentpool: syspool
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5432
+              name: postgres
+          envFrom:
+            - configMapRef:
+                name: postgres-zrs-config
+            - secretRef:
+                name: postgres-zrs-secret
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "demo"]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "demo"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: premium-ssd-zrs
+        resources:
+          requests:
+            storage: 100Gi

@@ -24,22 +24,23 @@ replication, how the CSI drivers compare), see
 > Both groups are valid and used side-by-side in this repo. The matrix below
 > mixes them — the **Managed by** row makes it clear which is which.
 
-| Attribute              | **Local NVMe** (`local-nvme`) | **Elastic SAN** (`azuresan-csi`) | **Azure Disk v1** (`azure-disk`) | **Premium SSD v2** (`premium-ssd-v2`) | **Azure Files** (`acstor-azurefiles-*`) |
-|------------------------|-------------------------------|----------------------------------|-------------------------------|----------------------------------------|------------------------------------------|
-| **Managed by**         | ACS v2.1 (`ephemeralDisk`)    | ACS v2.1 (`elasticSan`)          | AKS built-in CSI              | AKS built-in CSI (same driver, modern SKU) | AKS built-in CSI                    |
-| **Provisioner**        | `localdisk.csi.acstor.io`     | `san.csi.azure.com`              | `disk.csi.azure.com`          | `disk.csi.azure.com`                   | `file.csi.azure.com`                     |
-| **Backing resource**   | NVMe on Lsv3 node             | Azure Elastic SAN (iSCSI)        | Azure Managed Disk (Premium SSD v1) | Azure Managed Disk (Premium SSD v2, `PremiumV2_LRS`) | Azure Files share (SMB or NFS 4.1) |
-| **Typical read IOPS**  | 400k+ (direct NVMe)           | 5k–1M+ (scales with SAN TiB)     | ~20k (P30 disk)               | **3k–80k (independent dial)**          | 400–100k (scales with share size, tier)  |
-| **Typical latency**    | sub-100µs                     | ~1ms                             | ~1ms                          | **sub-ms (~0.5ms)**                    | 1–3ms Premium / 5–10ms Standard          |
-| **Throughput**         | 3+ GB/s (per node)            | 200 MB/s–40 GB/s (SAN-wide)      | ~200 MB/s (per disk)          | **125 MB/s–1.2 GB/s (independent dial)** | 100 MB/s Standard, up to 10 GB/s Premium |
-| **Durability**         | ❌ Ephemeral (node-local)     | ✅ Persistent (LRS)              | ✅ Persistent (zone-redundant) | ✅ Persistent (**LRS only**, no ZRS yet) | ✅ Persistent (LRS/ZRS)                |
-| **Survives node loss** | Only with app-level replication | ✅ Yes                         | ✅ Yes (disk reattaches)      | ✅ Yes (re-attach **within same AZ only**) | ✅ Yes (any node remounts the share)  |
-| **PVs per node**       | Unlimited (local)             | Unlimited (iSCSI, no disk limit) | Up to 64 (VM disk limit)      | Up to 64 (VM disk limit)               | Unlimited (network mount, no disk limit) |
-| **Replication**        | App-level (e.g. Cassandra RF=3) | Storage-level (LRS by default) | Storage-level (managed disk LRS/ZRS) | Storage-level (**LRS only**)        | Storage-level (LRS/ZRS at share)         |
-| **Zone failover**      | App-level (peers in other AZs) | LRS (zone-pinned) / ZRS opt.    | LRS pinned / ZRS opt-in       | **LRS only — zone-pinned, no auto failover** | LRS / ZRS                          |
-| **IOPS / size coupling** | Independent (NVMe is local) | SAN-wide pool                    | **Coupled** (P-tier sets IOPS)| **Independent dial** (the key v2 feature) | Coupled (Premium = 1 IOPS/GiB)      |
-| **Access mode**        | `ReadWriteOnce`               | `ReadWriteOnce`                  | `ReadWriteOnce`               | `ReadWriteOnce`                        | **`ReadWriteMany`** ✅                   |
-| **Volume expansion**   | ✅                            | ✅ (via Azure portal/CLI)        | ✅                            | ✅ (capacity + IOPS + throughput live)  | ✅                                       |
+| Attribute              | **Local NVMe** (`local-nvme`) | **Elastic SAN** (`azuresan-csi`) | **Azure Disk v1** (`azure-disk`) | **Premium SSD v1 ZRS** (`premium-ssd-zrs`) | **Premium SSD v2** (`premium-ssd-v2`) | **Azure Files** (`acstor-azurefiles-*`) |
+|------------------------|-------------------------------|----------------------------------|-------------------------------|--------------------------------------------|----------------------------------------|------------------------------------------|
+| **Managed by**         | ACS v2.1 (`ephemeralDisk`)    | ACS v2.1 (`elasticSan`)          | AKS built-in CSI              | AKS built-in CSI (same driver, ZRS SKU)    | AKS built-in CSI (same driver, modern SKU) | AKS built-in CSI                    |
+| **Provisioner**        | `localdisk.csi.acstor.io`     | `san.csi.azure.com`              | `disk.csi.azure.com`          | `disk.csi.azure.com`                       | `disk.csi.azure.com`                   | `file.csi.azure.com`                     |
+| **Backing resource**   | NVMe on Lsv3 node             | Azure Elastic SAN (iSCSI)        | Azure Managed Disk (Premium SSD v1 LRS) | Azure Managed Disk (Premium SSD v1 `Premium_ZRS`) | Azure Managed Disk (Premium SSD v2, `PremiumV2_LRS`) | Azure Files share (SMB or NFS 4.1) |
+| **Typical read IOPS**  | 400k+ (direct NVMe)           | 5k–1M+ (scales with SAN TiB)     | ~20k (P30 disk)               | ~5k (P30, coupled to size)                 | **3k–80k (independent dial)**          | 400–100k (scales with share size, tier)  |
+| **Typical latency**    | sub-100µs                     | ~1ms                             | ~1ms                          | ~1–2ms (cross-zone sync write tax)         | **sub-ms (~0.5ms)**                    | 1–3ms Premium / 5–10ms Standard          |
+| **Throughput**         | 3+ GB/s (per node)            | 200 MB/s–40 GB/s (SAN-wide)      | ~200 MB/s (per disk)          | ~200 MB/s (P30, coupled to size)           | **125 MB/s–1.2 GB/s (independent dial)** | 100 MB/s Standard, up to 10 GB/s Premium |
+| **Durability**         | ❌ Ephemeral (node-local)     | ✅ Persistent (LRS)              | ✅ Persistent (in-zone)       | ✅ Persistent (**ZRS — 3 zones**)            | ✅ Persistent (**LRS only**, ZRS not supported for v2) | ✅ Persistent (LRS/ZRS)                |
+| **Survives node loss** | Only with app-level replication | ✅ Yes                         | ✅ Yes (disk reattaches in same AZ) | ✅ Yes (reattaches in **any AZ**)          | ✅ Yes (re-attach **within same AZ only**) | ✅ Yes (any node remounts the share)  |
+| **Survives AZ loss**   | Only with app-level replication | LRS = no / ZRS = yes           | ❌ No (LRS, zone-pinned)      | **✅ Yes — graceful failover**              | ❌ No (LRS only)                       | LRS = no / ZRS = yes                     |
+| **PVs per node**       | Unlimited (local)             | Unlimited (iSCSI, no disk limit) | Up to 64 (VM disk limit)      | Up to 64 (VM disk limit)                   | Up to 64 (VM disk limit)               | Unlimited (network mount, no disk limit) |
+| **Replication**        | App-level (e.g. Cassandra RF=3) | Storage-level (LRS by default) | Storage-level (LRS)           | Storage-level (3-zone sync)                | Storage-level (**LRS only**)           | Storage-level (LRS/ZRS at share)         |
+| **Zone failover**      | App-level (peers in other AZs) | LRS (zone-pinned) / ZRS opt.    | LRS pinned                    | **Transparent cross-zone**                 | **LRS only — zone-pinned, no auto failover** | LRS / ZRS                          |
+| **IOPS / size coupling** | Independent (NVMe is local) | SAN-wide pool                    | **Coupled** (P-tier sets IOPS)| **Coupled** (P-tier sets IOPS)             | **Independent dial** (the key v2 feature) | Coupled (Premium = 1 IOPS/GiB)      |
+| **Access mode**        | `ReadWriteOnce`               | `ReadWriteOnce`                  | `ReadWriteOnce`               | `ReadWriteOnce` (shared disk also supported) | `ReadWriteOnce`                       | **`ReadWriteMany`** ✅                   |
+| **Volume expansion**   | ✅                            | ✅ (via Azure portal/CLI)        | ✅                            | ✅                                          | ✅ (capacity + IOPS + throughput live)  | ✅                                       |
 
 ---
 
@@ -66,6 +67,17 @@ replication, how the CSI drivers compare), see
 - Easier to snapshot / backup via Azure disk snapshots
 - Tier-driven (P10/P20/P30…) — IOPS coupled to size
 - ℹ️ Not managed by ACS v2.x — uses the AKS built-in CSI driver shipped with every AKS cluster
+
+### Premium SSD v1 ZRS → **Single-instance DB needing cross-AZ HA**  *(AKS built-in CSI)*
+- Same `disk.csi.azure.com` driver, SKU = `Premium_ZRS`
+- Disk replicated **synchronously across 3 AZs** — survives a full zone outage
+- Pod can re-attach to a node in any surviving zone (zero data loss, RTO ~60–90 s)
+- The **only built-in option** for AZ-tolerant block storage today (v2 has no ZRS)
+- ~10–15% cost premium over `Premium_LRS`, slightly higher write latency from sync replication
+- IOPS / throughput **still coupled** to disk size (P10/P30/P50…) — no v2-style dial
+- ⚠️ **Not for**: high-IOPS workloads (use Premium SSD v2 if you can tolerate zone pinning, or app-replicated NVMe)
+- ⚠️ **Not for**: latency-critical workloads (sync cross-zone write tax)
+→ Full doc: [`PREMIUM-SSD-ZRS.md`](PREMIUM-SSD-ZRS.md)
 
 ### Premium SSD v2 → **Single-instance DBs needing sub-ms + IOPS dial**  *(AKS built-in CSI)*
 - Same `disk.csi.azure.com` driver as Premium SSD v1 — just the modern SKU

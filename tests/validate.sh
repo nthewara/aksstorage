@@ -159,5 +159,45 @@ else
   echo "(demo-pgv2 namespace not deployed yet — skipping Postgres v2 checks)"
 fi
 
+# ─── 10. Premium SSD v1 ZRS (single-instance Postgres, cross-AZ) ────────────
+c "=== Premium SSD v1 ZRS ==="
+if kubectl get sc premium-ssd-zrs >/dev/null 2>&1; then
+  ok "StorageClass premium-ssd-zrs present"
+else
+  bad "StorageClass premium-ssd-zrs missing — apply manifests/storageclass/premium-ssd-zrs.yaml"
+fi
+
+if kubectl get ns demo-pgzrs >/dev/null 2>&1; then
+  kubectl -n demo-pgzrs rollout status statefulset/postgres-zrs --timeout=180s || true
+
+  READY=$(kubectl -n demo-pgzrs get pod postgres-zrs-0 \
+    -o jsonpath='{.status.containerStatuses[?(@.name=="postgres")].ready}' 2>/dev/null || echo "false")
+  if [ "$READY" = "true" ]; then
+    ok "postgres-zrs-0 Ready"
+  else
+    bad "postgres-zrs-0 NOT Ready (got: $READY)"
+  fi
+
+  PVC_PHASE=$(kubectl -n demo-pgzrs get pvc data-postgres-zrs-0 -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+  if [ "$PVC_PHASE" = "Bound" ]; then
+    ok "PVC data-postgres-zrs-0: Bound"
+  else
+    bad "PVC data-postgres-zrs-0: phase=$PVC_PHASE (expected Bound)"
+  fi
+
+  # Verify the backing disk is actually Premium_ZRS
+  PV=$(kubectl -n demo-pgzrs get pvc data-postgres-zrs-0 -o jsonpath='{.spec.volumeName}' 2>/dev/null || echo "")
+  if [ -n "$PV" ]; then
+    SKU=$(kubectl get pv "$PV" -o jsonpath='{.spec.csi.volumeAttributes.skuName}' 2>/dev/null || echo "")
+    if [ "$SKU" = "Premium_ZRS" ]; then
+      ok "PV backed by Premium_ZRS SKU (cross-zone replicated)"
+    else
+      bad "PV SKU=$SKU (expected Premium_ZRS)"
+    fi
+  fi
+else
+  echo "(demo-pgzrs namespace not deployed yet — skipping Postgres ZRS checks)"
+fi
+
 c "Done."
 ok "validation passed ✓"
