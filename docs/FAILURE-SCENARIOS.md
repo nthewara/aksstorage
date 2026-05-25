@@ -427,7 +427,10 @@ No pod restart required — the share resize is transparent to mounted clients.
 `demo-pgv2`. The PV lives in one Availability Zone (e.g. `australiaeast-1`)
 and `WaitForFirstConsumer` pinned the pod to a node in that same zone.
 
-> **Key constraint**: Premium SSD v2 is **LRS only**. There is no ZRS option
+> **Key constraint**: Premium SSD v2 managed disks are **LRS only** — ZRS is
+> explicitly not supported for v2 (or Ultra) block disks per Microsoft Learn.
+> Note: `PremiumV2_ZRS` *is* a valid SKU for Azure Files SSD shares — different
+> service, don't confuse the two. For managed disks there's no ZRS
 > as of 2026. The disk has 3 replicas inside a single AZ, zero across zones.
 > If the AZ hosting the disk fails, the volume is unreachable until the AZ
 > recovers. Pod anti-affinity across zones **does not help** — the disk

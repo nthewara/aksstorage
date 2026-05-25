@@ -22,7 +22,7 @@ The big differentiator vs Premium SSD v1 (the `P*` tiers):
 | Throughput dial | tied to disk size | **independent** — 125–1200 MB/s |
 | Capacity granularity | fixed tiers (P10/P20/P30…) | **1 GiB increments** |
 | Provisioning model | size-driven | per-dial pricing |
-| ZRS support | ✅ yes | ❌ not yet (LRS only as of 2026) |
+| ZRS support | ✅ yes (`Premium_ZRS`) | ❌ **LRS only** — `PremiumV2_ZRS` is **not** a valid managed disk SKU |
 | Latency | ~1 ms | **sub-ms** (typ. 0.5 ms read) |
 | Caching | Read/None/ReadWrite | **None only** |
 
@@ -58,8 +58,12 @@ AKS cluster.
 
 - **Sub-100µs latency** required (HFT, in-memory caches, Cassandra hot path)
   → use **local NVMe** on Lsv3 + ACS
-- **Multi-region DR with ZRS** required → Premium SSD v2 is **LRS-only**
-  today (no ZRS as of 2026). Use Premium SSD v1 ZRS, or app-level replication
+- **Zone-redundant block storage** required → Premium SSD v2 managed disks are
+  **LRS only**. ZRS is explicitly not supported (per Microsoft Learn: *"ZRS
+  for managed disks isn't supported with Premium SSD v2 managed disks or Ultra
+  Disks"*). Use Premium SSD v1 ZRS, or app-level replication.
+  ⚠️ Don't confuse with **Azure Files** — there `PremiumV2_ZRS` *is* a valid
+  SKU (for SSD file shares), but that's a separate service, not a managed disk
   across regions
 - **Hundreds of small PVs per cluster** → you'll hit VM disk-attach limits
   (64 per D8s_v5, less on smaller VMs). Use **Elastic SAN** instead

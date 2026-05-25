@@ -127,7 +127,7 @@ cross-disk replication, no quorum, no resync logic. Single-writer (RWO) only.
 |  | Azure Disk CSI (v1) | **Premium SSD v2** | ACS NVMe (replicated) | ACS NVMe (single) |
 |---|---|---|---|---|
 | Replication owner | Azure Storage (in SKU) | Azure Storage (LRS, 3× in-zone) | ACS engine (across nodes) | None (app handles it) |
-| Crosses zones | Only if ZRS | **No** (LRS only, no ZRS yet) | Yes, zone-aware | No |
+| Crosses zones | Only if ZRS | **No** (LRS only — ZRS not supported for v2 disks) | Yes, zone-aware | No |
 | Survives node loss | Yes (disk re-attaches) | Yes (same-AZ re-attach) | Yes (transparent) | No (app rebuilds) |
 | Latency | ~1–2 ms (network) | **sub-ms (~0.5 ms)** | sub-ms (local NVMe) | sub-ms |
 | Max IOPS | ~20k (P30) up to 80k (Ultra) | **80k (independent dial)** | 100K+ per node | 100K+ per node |
@@ -159,7 +159,10 @@ clustered-filesystem territory, not real RWX.
 - Per-VM disk attach limits (8–32 disks per VM depending on size) — this is the
   exact problem ESAN solves
 - Cross-zone failover unless you're on ZRS (and not every region has ZRS for
-  every SKU). **Premium SSD v2 has no ZRS yet (2026)** — strictly LRS
+  every SKU). **Premium SSD v2 managed disks are LRS only** — ZRS is
+  explicitly unsupported for v2 (and Ultra) block disks. The `PremiumV2_ZRS`
+  SKU name *does* exist but only for Azure Files SSD shares, not for managed
+  disks. Reference: [Microsoft Learn — disks-redundancy](https://learn.microsoft.com/en-us/azure/virtual-machines/disks-redundancy)
 - Latency-sensitive workloads (Cassandra, Kafka, Redis-persistent) where local
   NVMe wins by 10–100×
 
