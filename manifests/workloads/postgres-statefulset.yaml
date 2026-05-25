@@ -1,0 +1,71 @@
+# Postgres StatefulSet — secondary scenario (Azure Disk backed, durable).
+# Uses the azure-disk-acstor StorageClass.
+# Primary use: demonstrate AzureDisk scenario; contrast with NVMe (Cassandra).
+#
+# Apply after enabling azureDisk storage type:
+#   az aks update -g $RG -n $CLUSTER --enable-azure-container-storage azureDisk
+#   kubectl apply -f manifests/storageclass/azure-disk.yaml
+#   kubectl apply -f manifests/workloads/postgres-statefulset.yaml
+#
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: acstor-demo
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: acstor-demo
+spec:
+  clusterIP: None
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      name: pg
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: acstor-demo
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: postgres
+          image: mcr.microsoft.com/cbl-mariner/base/postgres:14
+          env:
+            - name: POSTGRES_PASSWORD
+              value: "acstor-lab-only"   # demo only; never use in prod
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: pg-data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: [pg_isready, -U, postgres]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+  volumeClaimTemplates:
+    - metadata:
+        name: pg-data
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: azure-disk-acstor
+        resources:
+          requests:
+            storage: 20Gi

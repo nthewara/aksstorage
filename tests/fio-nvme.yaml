@@ -1,0 +1,50 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fio-nvme
+  namespace: cassandra
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        kubernetes.azure.com/agentpool: storagepool
+      tolerations:
+        - key: storage
+          operator: Equal
+          value: nvme
+          effect: NoSchedule
+      containers:
+        - name: fio
+          # Use ljishen/fio or equivalent. Replace if you have a trusted internal image.
+          image: ljishen/fio
+          command: [fio]
+          args:
+            # Sequential write — baseline throughput
+            - --name=seqwrite
+            - --filename=/data/seqwrite.bin
+            - --rw=write
+            - --bs=1M
+            - --iodepth=8
+            - --numjobs=1
+            - --size=10G
+            - --output-format=json+
+            # Random read IOPS — sub-100µs latency expected on NVMe
+            - --name=randread
+            - --filename=/data/randread.bin
+            - --rw=randread
+            - --bs=4k
+            - --iodepth=64
+            - --numjobs=4
+            - --size=4G
+            - --time_based
+            - --runtime=60
+            - --output-format=json+
+          volumeMounts:
+            - name: d
+              mountPath: /data
+      volumes:
+        - name: d
+          persistentVolumeClaim:
+            claimName: pvc-smoke-nvme

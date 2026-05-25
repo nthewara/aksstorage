@@ -1,0 +1,44 @@
+# Generic smoke-writer pod — proves the local-nvme StorageClass works end-to-end.
+# Writes a timestamped line to /data/journal.log every second.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-smoke-nvme
+  namespace: cassandra
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-nvme
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: smoke-writer
+  namespace: cassandra
+spec:
+  nodeSelector:
+    kubernetes.azure.com/agentpool: storagepool
+  tolerations:
+    - key: storage
+      operator: Equal
+      value: nvme
+      effect: NoSchedule
+  containers:
+    - name: writer
+      image: mcr.microsoft.com/cbl-mariner/busybox:2.0
+      command: [/bin/sh, -c]
+      args:
+        - |
+          set -eu
+          while true; do
+            echo "$(date -Iseconds) hello" >> /data/journal.log
+            sleep 1
+          done
+      volumeMounts:
+        - { name: d, mountPath: /data }
+  volumes:
+    - name: d
+      persistentVolumeClaim:
+        claimName: pvc-smoke-nvme

@@ -1,0 +1,20 @@
+# StorageClass: Azure Disk (Premium SSD) — secondary scenario.
+#
+# Suitable for: Postgres, workloads needing durable, reattachable block storage.
+# Not suitable for: very high IOPS or >64 PVs per node (see ESAN for that).
+#
+# Prerequisites:
+#   ACStor enabled for azureDisk (can coexist with ephemeralDisk):
+#     az aks update -g $RG -n $CLUSTER \
+#       --enable-azure-container-storage azureDisk
+#
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: azure-disk-acstor
+provisioner: disk.csi.acstor.io
+parameters:
+  skuName: Premium_LRS
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true

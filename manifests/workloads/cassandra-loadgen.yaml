@@ -1,0 +1,64 @@
+# Cassandra load generator — runs cassandra-stress for ~5 minutes to drive
+# writes and reads against the Cassandra cluster deployed in the 'cassandra' namespace.
+#
+# Apply after cassandra STS is Ready (all 3 pods UN in nodetool status):
+#   kubectl apply -f manifests/workloads/cassandra-loadgen.yaml
+#   kubectl -n cassandra logs -f job/cassandra-loadgen
+#
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cassandra-loadgen
+  namespace: cassandra
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: OnFailure
+      nodeSelector:
+        kubernetes.azure.com/agentpool: storagepool
+      tolerations:
+        - key: storage
+          operator: Equal
+          value: nvme
+          effect: NoSchedule
+      containers:
+        - name: stress
+          image: cassandra:4.1
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -eu
+              HOST="cassandra-0.cassandra.cassandra.svc.cluster.local"
+              echo "=== Waiting for Cassandra to be ready ==="
+              until cqlsh "$HOST" -e "DESCRIBE keyspaces;" 2>/dev/null; do
+                echo "  waiting..." && sleep 10
+              done
+
+              echo "=== Creating keyspace ==="
+              cqlsh "$HOST" -e "
+                CREATE KEYSPACE IF NOT EXISTS loadtest
+                  WITH replication = {'class': 'NetworkTopologyStrategy', 'australiaeast': 3};
+                USE loadtest;
+                CREATE TABLE IF NOT EXISTS hits (
+                  id uuid PRIMARY KEY,
+                  ts timestamp,
+                  payload text
+                );
+              "
+
+              echo "=== cassandra-stress write ==="
+              cassandra-stress write n=100000 \
+                -rate threads=8 \
+                -node "$HOST" \
+                -schema "keyspace=loadtest replication(strategy=NetworkTopologyStrategy,australiaeast=3)" \
+                2>&1 | tail -30
+
+              echo "=== cassandra-stress read ==="
+              cassandra-stress read n=50000 \
+                -rate threads=8 \
+                -node "$HOST" \
+                -schema "keyspace=loadtest" \
+                2>&1 | tail -30
+
+              echo "=== Done ==="

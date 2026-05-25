@@ -4,10 +4,13 @@
   "parameters": {
     "location": { "value": "australiaeast" },
     "prefix": { "value": "acsl" },
-    "kubernetesVersion": { "value": "1.30" },
+    "kubernetesVersion": { "value": "1.31" },
     "systemVmSize": { "value": "Standard_D4s_v5" },
-    "systemNodeCount": { "value": 3 },
+    "systemNodeCount": { "value": 2 },
+    "storagepoolVmSize": { "value": "Standard_L8s_v3" },
+    "storagepoolNodeCount": { "value": 3 },
     "adminAadObjectId": { "value": "" },
-    "enableAcstorViaStorageProfile": { "value": false }
+    "deployElasticSan": { "value": false },
+    "esanBaseSizeTiB": { "value": 1 }
   }
 }
