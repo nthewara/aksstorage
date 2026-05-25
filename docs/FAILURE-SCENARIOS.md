@@ -22,6 +22,10 @@ Run **`./tests/validate.sh`** between scenarios to spot drift.
 | 6 | ESAN SAN throughput throttling | all ESAN PVCs | Partial — degraded, not down |
 | 7 | Switching storage type post-install | all workloads using old SC | Manually migrate workloads |
 | 8 | Network partition between nodes | Cassandra quorum | Partial — degraded with 2/3 zones |
+| 9 | Azure Files Standard tier throttling | all SMB Standard PVCs | Partial — latency climbs, no data loss |
+| 10 | SMB session drop / network blip | one pod's mount | Yes — CIFS client auto-reconnects |
+| 11 | Pod eviction during write (Azure Files) | one in-flight file | Yes (SMB) / brief lock window (NFS) |
+| 12 | Azure Files quota exhaustion | the shared PVC | No — expand the PVC or free space |
 
 ---
 
@@ -285,6 +289,133 @@ kubectl -n cassandra exec cassandra-1 -- nodetool status
 kubectl -n cassandra delete netpol deny-all
 # Gossip reconnects; Cassandra repairs state automatically within ~30s.
 ```
+
+---
+
+## 9. Azure Files Standard tier throttling
+
+**Setup**: `acstor-azurefiles-standard` SC, nginx-shared workload (or any RWX workload) sized small enough that you hit the per-share IOPS cap.
+
+Standard Azure Files is throttled at the share level: **1,000 IOPS baseline**
+with burst up to 10,000 IOPS for 60 minutes/day. Premium scales IOPS with share
+size (1 IOPS/GiB + 400 baseline).
+
+```bash
+# Saturate IOPS from one of the nginx-shared pods
+POD=$(kubectl -n demo-files get pod -l app=nginx-shared -o jsonpath='{.items[0].metadata.name}')
+kubectl exec -n demo-files "$POD" -- sh -c '
+  apk add --no-cache fio 2>/dev/null || true
+  fio --name=throttle --filename=/usr/share/nginx/html/throttle.bin \
+      --rw=randwrite --bs=4k --iodepth=64 --numjobs=2 \
+      --size=2G --time_based --runtime=120 --output-format=normal
+'
+```
+
+**Expected**:
+- IOPS plateaus at the tier ceiling; latency climbs from ~5ms to 50–500ms
+- Other pods sharing the volume see slower reads/writes
+- `tail -f /var/log/syslog` on the node shows occasional `SMB2 server returned STATUS_PENDING`
+- **No data loss** — just degraded throughput
+
+**Recovery**: switch the workload to `acstor-azurefiles-premium`, or shard the
+workload across multiple shares. Migration requires a fresh PVC + `kubectl cp`
+or rsync — there is no in-place tier change for dynamically-provisioned shares.
+
+---
+
+## 10. SMB session drop / network blip — automount recovery
+
+Simulate a network blip between an AKS node and the storage account:
+
+```bash
+# Pick the node hosting one of the nginx-shared pods
+POD=$(kubectl -n demo-files get pod -l app=nginx-shared -o jsonpath='{.items[0].metadata.name}')
+NODE=$(kubectl -n demo-files get pod "$POD" -o jsonpath='{.spec.nodeName}')
+echo "Targeting $NODE (hosts $POD)"
+
+# In one terminal, start a continuous writer
+kubectl exec -n demo-files "$POD" -- sh -c '
+  while true; do
+    echo "$(date -u +%FT%TZ) ping" >> /usr/share/nginx/html/heartbeat.txt
+    sleep 1
+  done'
+
+# In another terminal, simulate a blip via NetworkPolicy on the node's pod CIDR
+kubectl apply -f chaos/netpol-deny-all.yaml
+sleep 20
+kubectl delete -f chaos/netpol-deny-all.yaml
+```
+
+**Expected**:
+- SMB session is dropped; the kernel CIFS client retries with backoff
+- The heartbeat writer stalls during the outage, then resumes — **no remount required**
+- Mount options `nosharesock` and `actimeo=30` keep stale handles minimal
+- `dmesg | grep -i cifs` on the node shows reconnect messages
+
+**Recovery**: automatic. If the session does not come back within ~5 minutes,
+delete the pod — kubelet will remount on pod recreate.
+
+---
+
+## 11. Pod eviction during write — file consistency
+
+Kill a pod mid-write and inspect the shared file:
+
+```bash
+POD=$(kubectl -n demo-files get pod -l app=nginx-shared -o jsonpath='{.items[0].metadata.name}')
+
+# Start a slow large write in the background
+kubectl exec -n demo-files "$POD" -- sh -c '
+  for i in $(seq 1 100000); do
+    echo "line $i from $(hostname)" >> /usr/share/nginx/html/big.txt
+  done' &
+WRITER=$!
+
+sleep 2
+# Evict the pod mid-write
+kubectl -n demo-files delete pod "$POD" --grace-period=0 --force
+wait $WRITER 2>/dev/null || true
+
+# Inspect the file from a surviving pod
+SURVIVOR=$(kubectl -n demo-files get pod -l app=nginx-shared -o jsonpath='{.items[0].metadata.name}')
+kubectl exec -n demo-files "$SURVIVOR" -- tail -5 /usr/share/nginx/html/big.txt
+kubectl exec -n demo-files "$SURVIVOR" -- wc -l /usr/share/nginx/html/big.txt
+```
+
+**Expected**:
+- **SMB**: in-flight buffered writes may be lost (last few KB), but the file is
+  intact — SMB does not leave durable locks on session loss
+- **NFS 4.1**: file locks held by the evicted pod are released on session timeout
+  (~90s by default). During that window, other pods writing to the same byte
+  range may see `EAGAIN`. After timeout, full access resumes.
+- **No filesystem corruption** in either case
+
+**Recovery**: automatic. New replica spins up, mounts the share, resumes writing.
+
+---
+
+## 12. Azure Files quota exhaustion
+
+```bash
+POD=$(kubectl -n demo-files get pod -l app=nginx-shared -o jsonpath='{.items[0].metadata.name}')
+kubectl exec -n demo-files "$POD" -- sh -c '
+  dd if=/dev/zero of=/usr/share/nginx/html/fill.bin bs=1M count=200000 status=progress
+'
+```
+
+**Expected**: `dd` fails with `No space left on device` once the share quota
+is hit. Other pods on the same share also start failing writes — quota is
+share-wide, not per-pod.
+
+**Recovery**: expand the PVC (Azure Files supports online expansion):
+
+```bash
+kubectl -n demo-files patch pvc nginx-shared-pvc \
+  --type merge -p '{"spec":{"resources":{"requests":{"storage":"200Gi"}}}}'
+kubectl -n demo-files exec "$POD" -- rm /usr/share/nginx/html/fill.bin
+```
+
+No pod restart required — the share resize is transparent to mounted clients.
 
 ---
 

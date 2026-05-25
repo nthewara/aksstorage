@@ -1,0 +1,41 @@
+# StorageClass: Azure Files (Premium LRS, SMB) — RWX shared storage, low-latency.
+#
+# Suitable for: shared content across multiple replicas needing single-digit-ms
+#   latency, web farms, build caches, CMS shared media, low-to-mid IOPS DBs that
+#   require RWX.
+# Not suitable for: ultra-low-latency local workloads (use NVMe), or strict
+#   POSIX semantics (use the NFS variant).
+#
+# Performance: provisioned IOPS/throughput scales with share size on Premium.
+#   Baseline IOPS ≈ 400 + (1 IOPS/GiB), burst up to 4000 IOPS for shares ≥ 100 GiB.
+#
+# Auth model: Managed Identity ONLY. The AKS kubelet MI must hold
+#   "Storage File Data SMB Share Contributor" at the resource-group scope so the
+#   driver can dynamically create a FileStorage account (Premium) + share and
+#   mount via AAD/Kerberos. Storage account keys are disabled in this tenant.
+#
+# Prerequisites:
+#   - file.csi.azure.com CSI driver enabled on the cluster (default on AKS).
+#   - kubelet MI role assignment (see docs/AZURE-FILES.md §3).
+#
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: acstor-azurefiles-premium
+provisioner: file.csi.azure.com
+parameters:
+  skuName: Premium_LRS
+  protocol: smb
+  # No storageAccount / resourceGroup keys — MI-based dynamic provisioning only.
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+allowVolumeExpansion: true
+mountOptions:
+  - dir_mode=0777
+  - file_mode=0777
+  - uid=0
+  - gid=0
+  - mfsymlinks
+  - cache=strict
+  - nosharesock
+  - actimeo=30

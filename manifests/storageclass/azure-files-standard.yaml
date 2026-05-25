@@ -1,0 +1,39 @@
+# StorageClass: Azure Files (Standard LRS, SMB) — RWX shared storage.
+#
+# Suitable for: shared web content, CI caches, modest-throughput shared workloads,
+#   ReadWriteMany scenarios where cost matters more than raw IOPS.
+# Not suitable for: high-IOPS DBs, latency-sensitive workloads (use Premium tier
+#   or local NVMe), or strict POSIX semantics (use the NFS variant).
+#
+# Auth model: Managed Identity ONLY. The AKS kubelet MI must hold
+#   "Storage File Data SMB Share Contributor" at the resource-group scope so the
+#   driver can dynamically create the storage account + file share and mount it
+#   via AAD/Kerberos. Storage account keys are disabled in this tenant — do not
+#   reference any account name or key in this manifest.
+#
+# Prerequisites:
+#   - file.csi.azure.com CSI driver enabled on the cluster (default on AKS).
+#   - kubelet MI role assignment (see docs/AZURE-FILES.md §3).
+#
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: acstor-azurefiles-standard
+provisioner: file.csi.azure.com
+parameters:
+  skuName: Standard_LRS
+  protocol: smb
+  # No storageAccount / resourceGroup keys — driver creates the account dynamically
+  # using the kubelet MI's RBAC at the RG scope. Identity-based auth only.
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+allowVolumeExpansion: true
+mountOptions:
+  - dir_mode=0777
+  - file_mode=0777
+  - uid=0
+  - gid=0
+  - mfsymlinks
+  - cache=strict
+  - nosharesock
+  - actimeo=30

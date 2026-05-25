@@ -1,0 +1,37 @@
+# StorageClass: Azure Files (Premium LRS, NFS v4.1) — RWX with strict POSIX.
+#
+# Suitable for: Linux workloads needing strict POSIX semantics (hard links,
+#   byte-range locks, file ownership/mode), CI/CD shared caches, AI/ML datasets
+#   shared across pods, scientific compute.
+# Not suitable for: Windows workloads (use SMB variants), or any cluster without
+#   a private endpoint into the same VNet as the AKS nodes.
+#
+# IMPORTANT — NETWORKING REQUIREMENT:
+#   NFS Azure Files mounts ONLY support private endpoints. The storage account
+#   that the driver creates must have:
+#     - A private endpoint in the AKS VNet (or a peered VNet reachable on TCP 2049)
+#     - Public network access DISABLED
+#   You must pre-create a private DNS zone (privatelink.file.core.windows.net)
+#   linked to the AKS VNet, or the mount will fail with name resolution errors.
+#   See docs/AZURE-FILES.md §3 for the full networking setup.
+#
+# Auth model: Managed Identity ONLY for control-plane operations (account/share
+#   creation). NFS itself does not use AAD auth — the data plane is secured by
+#   VNet isolation (private endpoint). No storage keys are exchanged.
+#
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: acstor-azurefiles-nfs
+provisioner: file.csi.azure.com
+parameters:
+  skuName: Premium_LRS
+  protocol: nfs
+  # NFS requires Premium FileStorage account + private endpoint in the AKS VNet.
+  # No storageAccount / key references — MI-based dynamic provisioning only.
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+allowVolumeExpansion: true
+mountOptions:
+  - nconnect=4
+  - actimeo=30
