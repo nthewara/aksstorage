@@ -17,14 +17,16 @@ kubectl config current-context
 kubectl get nodes -o wide -L kubernetes.azure.com/agentpool
 
 # ─── 2. ACStor namespace + pods ──────────────────────────────────────────────
-c "Azure Container Storage namespace + pods"
-kubectl get ns "$NS_ACSTOR" >/dev/null 2>&1 \
-  || bad "namespace $NS_ACSTOR missing — is the ACStor extension installed?"
-not_ready=$(kubectl -n "$NS_ACSTOR" get pods --no-headers 2>/dev/null \
-  | awk '$3!="Running" && $3!="Completed"{print}' | wc -l | tr -d ' ')
-[ "$not_ready" = "0" ] \
-  && ok "all acstor pods Running" \
-  || { kubectl -n "$NS_ACSTOR" get pods; bad "$not_ready acstor pods not Running"; }
+c "Azure Container Storage pods in $NS_ACSTOR"
+kubectl get ns "$NS_ACSTOR" >/dev/null 2>&1 || bad "namespace $NS_ACSTOR missing"
+# ACS v2.x deploys with the 'acstor-' name prefix in kube-system; filter to those
+acstor_pods=$(kubectl -n "$NS_ACSTOR" get pods --no-headers 2>/dev/null | grep -E '^acstor-' || true)
+if [ -z "$acstor_pods" ]; then
+  bad "no acstor-* pods in $NS_ACSTOR — is ACS v2 installed? Run: az aks update ... --enable-azure-container-storage ephemeralDisk"
+fi
+not_ready=$(echo "$acstor_pods" | awk '$3!="Running" && $3!="Completed"{print}' | wc -l | tr -d ' ')
+total=$(echo "$acstor_pods" | wc -l | tr -d ' ')
+[ "$not_ready" = "0" ] && ok "all $total acstor-* pods Running" || { echo "$acstor_pods"; bad "$not_ready acstor-* pods not Running"; }
 
 # ─── 3. Expected StorageClasses ──────────────────────────────────────────────
 c "StorageClasses"
