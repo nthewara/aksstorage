@@ -58,8 +58,8 @@ az aks update -g "$RG" -n "$CLUSTER" \
 Wait ~5 minutes. Verify:
 
 ```bash
-kubectl get ns acstor
-kubectl -n acstor get pods | grep san
+kubectl get deploy -n kube-system | grep acstor
+kubectl get pod  -n kube-system | grep -E 'acstor|san-csi'
 kubectl get sc | grep san
 ```
 

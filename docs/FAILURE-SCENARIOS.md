@@ -174,16 +174,16 @@ If using replicated NVMe volumes:
 
 ```bash
 # Kill an io-engine pod (simulates replica loss)
-POD=$(kubectl -n acstor get pod -l app=io-engine -o name | head -1)
-kubectl -n acstor delete "$POD"
+POD=$(kubectl -n kube-system get pod -l app=io-engine -o name | head -1)
+kubectl -n kube-system delete "$POD"
 ```
 
 **Expected**: ACStor marks replica `Faulted`, elects a new replica node,
 begins `Rebuilding` → `Online` cycle. I/O continues on surviving replicas.
 
 ```bash
-kubectl -n acstor get pods -l app=io-engine
-kubectl -n acstor get events --sort-by=.lastTimestamp | tail -20
+kubectl -n kube-system get pods -l app=io-engine
+kubectl -n kube-system get events --sort-by=.lastTimestamp | tail -20
 ```
 
 **Recommendation**: Use single-replica NVMe volumes + Cassandra RF=3. ACStor replicated
@@ -587,8 +587,8 @@ layer. For Cassandra/Kafka the math flips — use NVMe LRS + app RF=3 instead.
 ```bash
 # ACStor health
 kubectl get events -A --sort-by=.lastTimestamp | tail -30
-kubectl -n acstor logs -l app=io-engine --tail=200
-kubectl -n acstor get pods -o wide
+kubectl -n kube-system logs -l app=io-engine --tail=200
+kubectl -n kube-system get pods -l 'app in (io-engine,acstor-node-agent,acstor-cluster-manager)' -o wide
 
 # Cassandra
 kubectl -n cassandra exec cassandra-0 -- nodetool status
@@ -597,5 +597,5 @@ kubectl -n cassandra exec cassandra-0 -- nodetool describecluster
 
 # Log Analytics query
 az monitor log-analytics query -w <law-id> --analytics-query \
-  'KubeEvents | where Namespace in ("acstor","cassandra") | order by TimeGenerated desc | take 50'
+  'KubeEvents | where Namespace in ("kube-system","cassandra") and ObjectName contains "acstor" | order by TimeGenerated desc | take 50'
 ```

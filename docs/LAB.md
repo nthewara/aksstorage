@@ -118,11 +118,32 @@ kubectl apply -f manifests/storageclass/local-nvme.yaml
 
 ### Verify installation
 
+> **ACS v2.x runs in `kube-system`** — the old `acstor` namespace is gone
+> (removed in v2.0 "simplified deployment"). All ACS pods/deployments now
+> live alongside other AKS system components.
+
 ```bash
-kubectl get ns acstor
-kubectl -n acstor get pods
+kubectl get deploy -n kube-system | grep acstor
+kubectl get pod  -n kube-system | grep acstor
 kubectl get sc | grep -E 'local-|acstor'
 ```
+
+Expected pods (after enabling `ephemeralDisk`):
+- `acstor-cluster-manager-*` (the installer/controller, 2 replicas)
+- `acstor-geneva-*` (telemetry, 2 replicas)
+- `acstor-local-csi-driver-*` (CSI DaemonSet on storagepool nodes)
+- `acstor-node-agent-*` (DaemonSet on storage nodes)
+- `acstor-otel-collector-*` (logs/metrics DaemonSet)
+
+Also check the auto-created default StorageClass:
+```bash
+kubectl get sc local-csi
+# PROVISIONER: localdisk.csi.acstor.io  BINDINGMODE: WaitForFirstConsumer
+```
+
+> 💡 ACS v2 **auto-creates `local-csi`** when you pass `--enable-azure-container-storage ephemeralDisk`.
+> You can use it directly. Our `manifests/storageclass/local-nvme.yaml` is a
+> separately-named SC for cases where you want a different name or custom params.
 
 ---
 
@@ -138,7 +159,7 @@ kubectl get sc local-nvme
 Check that local CSI driver pods only run on storagepool nodes:
 
 ```bash
-kubectl -n acstor get pods -o wide | grep localdisk
+kubectl -n kube-system get pods -o wide | grep -E 'localdisk|local-csi'
 ```
 
 ---

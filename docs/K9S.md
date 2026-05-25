@@ -102,7 +102,7 @@ That's it — k9s reads `~/.kube/config` and lands on the default namespace pod 
 - `d` on a storagepool node — confirm `kubernetes.azure.com/agentpool=storagepool` label
 
 ### 2. Enable ACS
-- `:ns acstor`
+- `:ns kube-system` (ACS v2 lives here — filter `/acstor`)
 - `:pods` — watch the ACS extension installer, CSI driver, node agent come up
 - Filter `/local-csi` to see the local NVMe CSI driver pods rolling out
 - Wait until all pods are `Running` before applying any StorageClass

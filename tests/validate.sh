@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-NS_ACSTOR="${NS_ACSTOR:-acstor}"
+NS_ACSTOR="${NS_ACSTOR:-kube-system}"
 NS_CASS="${NS_CASS:-cassandra}"
 
 c()   { printf '\n\033[1;36m▶ %s\033[0m\n' "$*"; }
