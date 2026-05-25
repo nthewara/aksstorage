@@ -63,6 +63,7 @@ docs/
   ELASTIC-SAN.md       ESAN bring-up + multi-PV demo
   FAILURE-SCENARIOS.md Cassandra + NVMe specific failure exercises
   AZURE-FILES.md       Azure Files (SMB + NFS) RWX walkthrough + nginx-shared demo
+  COST-CLEANUP.md      Per-scenario cost shape + teardown playbook
 tests/
   validate.sh          Checks acstor pods, SCs, Cassandra nodetool + CQL
   fio-nvme.yaml        Raw NVMe throughput + IOPS baseline
