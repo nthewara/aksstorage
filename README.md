@@ -57,6 +57,7 @@ manifests/
 chaos/                 NetworkPolicy + disk-filler
 docs/
   LAB.md               Full step-by-step (Cassandra NVMe primary path)
+  K9S.md               k9s terminal UI — install + lab cheatsheet
   STORAGE-ARCHITECTURE.md  Mental model — ephemeral vs persistent, replication ownership, CSI comparison
   SCENARIOS.md         Picker matrix — NVMe vs AzureDisk vs ESAN vs Files
   ELASTIC-SAN.md       ESAN bring-up + multi-PV demo
