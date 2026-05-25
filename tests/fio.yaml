@@ -1,0 +1,30 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fio-smoke
+  namespace: acstor-demo
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: fio
+          image: mcr.microsoft.com/oss/nginx/nginx:1.25  # placeholder; swap for fio image you trust
+          command: [/bin/sh, -c]
+          args:
+            - |
+              # Minimal smoke: 1GiB sequential write then read. Replace with a
+              # real fio image (e.g. ljishen/fio) when you want richer metrics.
+              set -eu
+              cd /data
+              dd if=/dev/zero of=test.bin bs=1M count=1024 conv=fdatasync status=progress
+              dd if=test.bin of=/dev/null bs=1M status=progress
+              rm -f test.bin
+              echo OK
+          volumeMounts:
+            - { name: d, mountPath: /data }
+      volumes:
+        - name: d
+          persistentVolumeClaim:
+            claimName: pvc-acstor-smoke

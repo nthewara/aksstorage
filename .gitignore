@@ -1,0 +1,25 @@
+# Bicep / Terraform / params
+*.parameters.json
+!*.parameters.example.json
+*.tfvars
+*.auto.tfvars
+backend.hcl
+.terraform/
+*.tfstate*
+
+# Bicep build artifacts (we don't commit compiled ARM)
+infra/**/*.json
+!infra/**/*.parameters.example.json
+
+# Local
+.DS_Store
+.env
+.env.*
+!*.example
+*.log
+kubeconfig*
+~/.kube/
+
+# Editor
+.vscode/
+.idea/

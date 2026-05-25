@@ -1,0 +1,34 @@
+# Generic PVC + writer pod — proves the storage class works end-to-end.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-acstor-smoke
+  namespace: acstor-demo
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: acstor-azuredisk
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: writer
+  namespace: acstor-demo
+spec:
+  containers:
+    - name: w
+      image: mcr.microsoft.com/cbl-mariner/busybox:2.0
+      command: [/bin/sh, -c]
+      args:
+        - |
+          set -eu
+          echo "hello $(date -Iseconds)" >> /data/journal.log
+          tail -f /data/journal.log
+      volumeMounts:
+        - { name: d, mountPath: /data }
+  volumes:
+    - name: d
+      persistentVolumeClaim:
+        claimName: pvc-acstor-smoke
