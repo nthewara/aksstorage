@@ -1,5 +1,10 @@
 # Azure Files on AKS — RWX shared storage
 
+> **Not managed by Azure Container Storage.** Azure Files uses the AKS built-in
+> CSI driver (`file.csi.azure.com`) that ships with every AKS cluster. Included
+> in this lab for RWX scenario coverage alongside the ACS-managed NVMe and
+> Elastic SAN paths.
+
 Azure Files gives you a **ReadWriteMany** PVC backed by either SMB or NFS, fully
 managed by Azure. The CSI driver `file.csi.azure.com` ships on AKS by default,
 and this scenario uses **Managed Identity only** — no storage account keys,

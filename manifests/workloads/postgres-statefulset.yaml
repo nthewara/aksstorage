@@ -1,9 +1,13 @@
 # Postgres StatefulSet — secondary scenario (Azure Disk backed, durable).
-# Uses the azure-disk-acstor StorageClass.
-# Primary use: demonstrate AzureDisk scenario; contrast with NVMe (Cassandra).
+# Uses the `azure-disk` StorageClass (built-in disk.csi.azure.com driver).
 #
-# Apply after enabling azureDisk storage type:
-#   az aks update -g $RG -n $CLUSTER --enable-azure-container-storage azureDisk
+# NOT managed by Azure Container Storage. ACS v2.x only manages `ephemeralDisk`
+# (NVMe) and `elasticSan`; the v1.x `azureDisk` ACS type was removed in v2.0.
+# Disk-backed PVs now use the built-in AKS CSI driver, which is enabled on
+# every cluster by default — no `az aks update --enable-azure-container-storage`
+# step needed.
+#
+# Apply:
 #   kubectl apply -f manifests/storageclass/azure-disk.yaml
 #   kubectl apply -f manifests/workloads/postgres-statefulset.yaml
 #
@@ -65,7 +69,7 @@ spec:
         name: pg-data
       spec:
         accessModes: [ReadWriteOnce]
-        storageClassName: azure-disk-acstor
+        storageClassName: azure-disk
         resources:
           requests:
             storage: 20Gi

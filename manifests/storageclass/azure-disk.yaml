@@ -1,18 +1,23 @@
-# StorageClass: Azure Disk (Premium SSD) — secondary scenario.
+# Azure Disk via the AKS built-in CSI driver (disk.csi.azure.com).
+# NOT managed by Azure Container Storage v2.x — provided here as a
+# side-by-side comparison with ACS NVMe / ESAN scenarios.
+#
+# ACS v2.x only manages `ephemeralDisk` (NVMe) and `elasticSan` storage types.
+# The v1.x `azureDisk` ACS type was removed in v2.0; the built-in CSI driver
+# below is the recommended path for disk-backed PVs in v2.x.
 #
 # Suitable for: Postgres, workloads needing durable, reattachable block storage.
 # Not suitable for: very high IOPS or >64 PVs per node (see ESAN for that).
 #
 # Prerequisites:
-#   ACStor enabled for azureDisk (can coexist with ephemeralDisk):
-#     az aks update -g $RG -n $CLUSTER \
-#       --enable-azure-container-storage azureDisk
+#   None — disk.csi.azure.com ships on every AKS cluster by default.
+#   Verify with: kubectl get csidrivers | grep disk.csi.azure.com
 #
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
-  name: azure-disk-acstor
-provisioner: disk.csi.acstor.io
+  name: azure-disk
+provisioner: disk.csi.azure.com
 parameters:
   skuName: Premium_LRS
 reclaimPolicy: Delete
