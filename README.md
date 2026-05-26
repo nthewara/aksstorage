@@ -67,6 +67,7 @@ docs/
   AZURE-FILES.md       Azure Files (SMB + NFS) RWX walkthrough + nginx-shared demo
   KAFKA-MIRRORMAKER.md Kafka KRaft AZ1↔AZ2 on Premium SSD LRS + MirrorMaker 2 (validated)
   COST-CLEANUP.md      Per-scenario cost shape + teardown playbook
+  AKS-BEST-PRACTICES.md AKS Automatic best-practices gap analysis + what's implemented
 tests/
   validate.sh          Checks acstor pods, SCs, Cassandra nodetool + CQL
   fio-nvme.yaml        Raw NVMe throughput + IOPS baseline
