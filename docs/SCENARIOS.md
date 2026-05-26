@@ -91,6 +91,16 @@ replication, how the CSI drivers compare), see
 - ℹ️ Same built-in CSI as v1, just a different `skuName` in the StorageClass
 → Full doc: [`PREMIUM-SSD-V2.md`](PREMIUM-SSD-V2.md)
 
+### Kafka + MirrorMaker 2 (LRS across AZs) → **Active/passive Kafka with app-level replication**  *(AKS built-in CSI + MM2)*
+- Two single-broker KRaft clusters, one pinned to AZ1 and one to AZ2
+- Each backed by **Premium SSD LRS** (`azure-disk` SC) — disks zone-pinned by `WaitForFirstConsumer`
+- **MirrorMaker 2** does the cross-AZ replication, not the disk
+- The right pattern for Kafka on LRS: don't pay for ZRS — the app already replicates
+- Adds ~$10/mo on top of an existing AKS cluster (just the two 32 GiB P4 disks)
+- ⚠️ **Not for**: single-broker workloads without app-level replication — they need ZRS (`premium-ssd-zrs`)
+- ⚠️ **Not for**: ultra-low latency — local NVMe is still ~10× faster
+→ Full doc: [`KAFKA-MIRRORMAKER.md`](KAFKA-MIRRORMAKER.md)
+
 ### Azure Files → **Shared content, web farms, CI caches, ML datasets**  *(AKS built-in CSI)*
 - You need **ReadWriteMany** — multiple pods on multiple nodes mounting one volume
 - Shared web/static content across an nginx fleet, CMS uploads, build caches
@@ -129,3 +139,4 @@ replication, how the CSI drivers compare), see
 | Azure Disk v1 | AKS built-in CSI | Storage-level (zone-redundant managed disk). For HA, combine with app-level replication or use ZRS disks. |
 | Premium SSD v2 | AKS built-in CSI | Storage-level **LRS only** (3× in-zone). No ZRS as of 2026 — for cross-AZ HA, run app-level replication (Patroni, CNPG) with one v2 disk per zone. |
 | Azure Files | AKS built-in CSI | LRS by default at the share level; switch to ZRS for zone redundancy. Multi-region → use share snapshots + AzCopy or Azure Backup vault. |
+| Kafka + MM2 (LRS across AZs) | AKS built-in CSI + MirrorMaker 2 | **App-level** via MM2 — ð don't use ZRS disks here, Kafka already does the cross-AZ replication. Disks stay LRS (cheap), MM2 replicates `az1 → az2` (and back, for active/active). |
