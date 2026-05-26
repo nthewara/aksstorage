@@ -34,6 +34,15 @@ param storagepoolNodeCount int = 3
 @description('Object ID of the principal (user / SP) that will get cluster-admin via AAD. Optional.')
 param adminAadObjectId string = ''
 
+@description('AKS cluster tier — Standard (recommended) gives 99.9% API server SLA.')
+param clusterTier string = 'Standard'
+
+@description('Pod CIDR for Azure CNI Overlay. Not routed in the VNet. Default 100.64.0.0/10 gives ~4M pod IPs.')
+param podCidr string = '100.64.0.0/10'
+
+@description('Restrict API server access to these CIDRs. Empty array = unrestricted (dev default).')
+param apiServerAuthorizedIPRanges array = []
+
 @description('Deploy the optional Elastic SAN module. Set true to create ESAN + RBAC.')
 param deployElasticSan bool = false
 
@@ -71,6 +80,9 @@ module aks 'modules/aks.bicep' = {
     subnetId: network.outputs.aksSubnetId
     logAnalyticsWorkspaceId: monitoring.outputs.workspaceId
     adminAadObjectId: adminAadObjectId
+    clusterTier: clusterTier
+    podCidr: podCidr
+    apiServerAuthorizedIPRanges: apiServerAuthorizedIPRanges
   }
 }
 

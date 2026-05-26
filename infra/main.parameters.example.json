@@ -2,15 +2,18 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    "location": { "value": "australiaeast" },
-    "prefix": { "value": "acsl" },
-    "kubernetesVersion": { "value": "1.34" },
-    "systemVmSize": { "value": "Standard_D4s_v5" },
-    "systemNodeCount": { "value": 2 },
-    "storagepoolVmSize": { "value": "Standard_L8s_v3" },
+    "location":              { "value": "australiaeast" },
+    "prefix":               { "value": "acsl" },
+    "kubernetesVersion":    { "value": "1.34" },
+    "systemVmSize":         { "value": "Standard_D4s_v5" },
+    "systemNodeCount":      { "value": 2 },
+    "storagepoolVmSize":    { "value": "Standard_L8s_v3" },
     "storagepoolNodeCount": { "value": 3 },
-    "adminAadObjectId": { "value": "" },
-    "deployElasticSan": { "value": false },
-    "esanBaseSizeTiB": { "value": 1 }
+    "adminAadObjectId":     { "value": "" },
+    "clusterTier":          { "value": "Standard" },
+    "podCidr":              { "value": "100.64.0.0/10" },
+    "apiServerAuthorizedIPRanges": { "value": ["YOUR_PUBLIC_IP/32"] },
+    "deployElasticSan":     { "value": false },
+    "esanBaseSizeTiB":      { "value": 1 }
   }
 }
