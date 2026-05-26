@@ -51,11 +51,22 @@ Steady-state, 24×7, before any reserved instances / hybrid benefit.
 | Azure Files Standard (LRS, 100 GiB) | alt | ~$0.008 | ~$0.20 | ~$6 |
 | **Scenario D incremental** | | **~$0.022** | **~$0.53** | **~$16** |
 
+### Scenario E — Kafka + MirrorMaker 2 across AZs (Premium SSD LRS)
+| Component | Qty | Hourly | Daily | Monthly |
+|---|---|---|---|---|
+| Premium SSD LRS P4 (32 GiB) per broker | 2 | ~$0.014 | ~$0.33 | ~$10 |
+| Kafka broker pods (on existing storagepool) | 2 | inc. | inc. | inc. |
+| MirrorMaker 2 deployment (on existing syspool, ~300m / 768Mi) | 1 | inc. | inc. | inc. |
+| Cross-AZ replication traffic (lab-rate produce) | — | trivial | trivial | trivial |
+| **Scenario E incremental** | | **~$0.014** | **~$0.33** | **~$10** |
+
+(MM2 itself stores all state in Kafka internal topics on the source/target brokers — zero extra PVCs.)
+
 ---
 
 ## Running everything at once
 
-If you want all 4 scenarios live for a demo:
+If you want all 5 scenarios live for a demo:
 
 | | Daily | Monthly |
 |---|---|---|
@@ -64,7 +75,8 @@ If you want all 4 scenarios live for a demo:
 | Azure Disk (Postgres) | $2 | $51 |
 | ESAN 1 TiB | $5 | $152 |
 | Azure Files Premium | $1 | $16 |
-| **Total** | **~$63/day** | **~$1,890/month** |
+| Kafka + MM2 | $0.33 | $10 |
+| **Total** | **~$63/day** | **~$1,900/month** |
 
 ---
 
@@ -146,6 +158,17 @@ az aks update -g rg-acstor-lab -n aks-acsl-3dntcpfgfndgw \
 kubectl delete -f manifests/workloads/nginx-shared.yaml
 kubectl delete -f manifests/storageclass/azure-files-premium.yaml
 # Dynamically-provisioned storage account in the MC_ RG is cleaned up automatically
+```
+
+**Kafka + MirrorMaker 2:**
+```bash
+kubectl delete -f manifests/workloads/kafka/20-mirrormaker2.yaml --ignore-not-found
+kubectl delete -f manifests/workloads/kafka/11-kafka-az2.yaml --ignore-not-found
+kubectl delete -f manifests/workloads/kafka/10-kafka-az1.yaml --ignore-not-found
+# StatefulSet PVCs aren't garbage-collected with the manifest — release the Premium SSD disks:
+kubectl -n kafka-az1 delete pvc data-kafka-az1-0 --ignore-not-found
+kubectl -n kafka-az2 delete pvc data-kafka-az2-0 --ignore-not-found
+kubectl delete -f manifests/workloads/kafka/00-namespaces.yaml --ignore-not-found
 ```
 
 ### Cron-style auto-stop (avoid $ surprises overnight)
