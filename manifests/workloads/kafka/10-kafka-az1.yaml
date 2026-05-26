@@ -1,0 +1,161 @@
+# Kafka KRaft single-node broker — pinned to AZ1
+#
+# Storage: Premium SSD LRS via the AKS built-in CSI driver (StorageClass `azure-disk`).
+# Disk is zone-pinned (LRS). volumeBindingMode=WaitForFirstConsumer on the SC
+# ensures the disk lands in the same AZ as the scheduled pod.
+#
+# Mode: KRaft (no ZooKeeper). Single combined controller+broker, node.id=1.
+# Config: explicit server.properties via ConfigMap (avoids env-var quirks in
+# the apache/kafka image around combined broker+controller advertised listeners).
+# Format step: kafka-storage.sh runs once via initContainer (idempotent — skipped
+# if meta.properties already exists on the PV).
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-az1-config
+  namespace: kafka-az1
+data:
+  server.properties: |
+    process.roles=broker,controller
+    node.id=1
+    controller.quorum.voters=1@kafka-az1-0.kafka-az1.kafka-az1.svc.cluster.local:9093
+    listeners=PLAINTEXT://:9092,CONTROLLER://:9093
+    advertised.listeners=PLAINTEXT://kafka-az1-0.kafka-az1.kafka-az1.svc.cluster.local:9092
+    listener.security.protocol.map=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+    controller.listener.names=CONTROLLER
+    inter.broker.listener.name=PLAINTEXT
+    log.dirs=/var/lib/kafka/data/logs
+    num.network.threads=3
+    num.io.threads=8
+    socket.send.buffer.bytes=102400
+    socket.receive.buffer.bytes=102400
+    socket.request.max.bytes=104857600
+    num.partitions=3
+    num.recovery.threads.per.data.dir=1
+    offsets.topic.replication.factor=1
+    transaction.state.log.replication.factor=1
+    transaction.state.log.min.isr=1
+    log.retention.hours=24
+    log.segment.bytes=1073741824
+    log.retention.check.interval.ms=300000
+    auto.create.topics.enable=true
+  entrypoint.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    DATA_DIR=/var/lib/kafka/data/logs
+    META=${DATA_DIR}/meta.properties
+    mkdir -p "$DATA_DIR"
+    if [ ! -f "$META" ]; then
+      echo ">> First boot — formatting KRaft storage"
+      /opt/kafka/bin/kafka-storage.sh format \
+        --cluster-id aksstorage-az1-cluster-001 \
+        --config /etc/kafka/server.properties \
+        --ignore-formatted
+    else
+      echo ">> meta.properties present — skipping format"
+    fi
+    exec /opt/kafka/bin/kafka-server-start.sh /etc/kafka/server.properties
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-az1
+  namespace: kafka-az1
+  labels:
+    app: kafka
+    cluster: az1
+spec:
+  clusterIP: None
+  ports:
+    - name: client
+      port: 9092
+      targetPort: 9092
+    - name: controller
+      port: 9093
+      targetPort: 9093
+  selector:
+    app: kafka
+    cluster: az1
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka-az1
+  namespace: kafka-az1
+  labels:
+    app: kafka
+    cluster: az1
+spec:
+  serviceName: kafka-az1
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka
+      cluster: az1
+  template:
+    metadata:
+      labels:
+        app: kafka
+        cluster: az1
+    spec:
+      securityContext:
+        fsGroup: 1000
+      nodeSelector:
+        topology.kubernetes.io/zone: australiaeast-1
+      tolerations:
+        - key: storage
+          operator: Equal
+          value: nvme
+          effect: NoSchedule
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: kafka
+          image: apache/kafka:3.9.0
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "/etc/kafka/entrypoint.sh"]
+          ports:
+            - containerPort: 9092
+              name: client
+            - containerPort: 9093
+              name: controller
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/kafka/data
+            - name: cfg
+              mountPath: /etc/kafka/server.properties
+              subPath: server.properties
+            - name: cfg
+              mountPath: /etc/kafka/entrypoint.sh
+              subPath: entrypoint.sh
+          readinessProbe:
+            tcpSocket:
+              port: 9092
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 9092
+            initialDelaySeconds: 60
+            periodSeconds: 20
+      volumes:
+        - name: cfg
+          configMap:
+            name: kafka-az1-config
+            defaultMode: 0755
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: azure-disk
+        resources:
+          requests:
+            storage: 32Gi

@@ -1,0 +1,104 @@
+# MirrorMaker 2 — active/passive replication: kafka-az1 (source) → kafka-az2 (target).
+#
+# Runs in dedicated MM2 mode via `connect-mirror-maker.sh`. Three internal Kafka
+# Connect connectors are spun up automatically by MM2:
+#   - MirrorSourceConnector (data + topic config)
+#   - MirrorCheckpointConnector (consumer group offsets)
+#   - MirrorHeartbeatConnector (replication lag heartbeat topic)
+#
+# Topic renaming: with the default `DefaultReplicationPolicy`, topics from the
+# `az1` cluster appear in `az2` prefixed with the source alias. e.g. `orders`
+# on az1 becomes `az1.orders` on az2. This prevents replication loops in
+# active/active setups and is the recommended pattern.
+#
+# Storage: MM2 itself is stateless — all state (offsets, configs, checkpoints,
+# heartbeats) lives in internal topics on the SOURCE/TARGET Kafka clusters
+# (which are on Premium SSD via the kafka-az1/az2 StatefulSets). No PVC here.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mm2-config
+  namespace: kafka-mm2
+data:
+  mm2.properties: |
+    # ── Cluster aliases & bootstrap servers ──────────────────────────────────
+    clusters = az1, az2
+    az1.bootstrap.servers = kafka-az1-0.kafka-az1.kafka-az1.svc.cluster.local:9092
+    az2.bootstrap.servers = kafka-az2-0.kafka-az2.kafka-az2.svc.cluster.local:9092
+
+    # ── Replication flow: az1 → az2 (active/passive) ─────────────────────────
+    az1->az2.enabled = true
+    az1->az2.topics = demo\..*, heartbeats
+    az1->az2.groups = .*
+
+    # Reverse direction OFF for this lab. Flip to true (and run a second MM2)
+    # for active/active. Be aware of cycle prevention via replication policy.
+    az2->az1.enabled = false
+
+    # ── Replication factors for MM2 internal + replicated topics ─────────────
+    # Single-broker source/target → everything must be RF=1.
+    replication.factor = 1
+    checkpoints.topic.replication.factor = 1
+    heartbeats.topic.replication.factor = 1
+    offset-syncs.topic.replication.factor = 1
+    offset.storage.replication.factor = 1
+    status.storage.replication.factor = 1
+    config.storage.replication.factor = 1
+
+    # ── Tasks / parallelism ──────────────────────────────────────────────────
+    tasks.max = 2
+
+    # ── Sync intervals (lab-tight; production = larger) ──────────────────────
+    refresh.topics.interval.seconds = 10
+    refresh.groups.interval.seconds = 10
+    sync.topic.configs.enabled = true
+    sync.topic.acls.enabled = false
+    emit.checkpoints.interval.seconds = 5
+    emit.heartbeats.interval.seconds = 5
+
+    # ── Topic naming: default keeps az1.<topic> on the target ────────────────
+    replication.policy.class = org.apache.kafka.connect.mirror.DefaultReplicationPolicy
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mm2
+  namespace: kafka-mm2
+  labels:
+    app: mm2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mm2
+  template:
+    metadata:
+      labels:
+        app: mm2
+    spec:
+      # MM2 is stateless — it can run on syspool (no Lsv3 toleration needed).
+      nodeSelector:
+        kubernetes.azure.com/agentpool: syspool
+      containers:
+        - name: mm2
+          image: apache/kafka:3.9.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - /opt/kafka/bin/connect-mirror-maker.sh
+            - /etc/mm2/mm2.properties
+          resources:
+            requests:
+              cpu: "300m"
+              memory: "768Mi"
+            limits:
+              cpu: "1500m"
+              memory: "1536Mi"
+          volumeMounts:
+            - name: cfg
+              mountPath: /etc/mm2
+              readOnly: true
+      volumes:
+        - name: cfg
+          configMap:
+            name: mm2-config
