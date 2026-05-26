@@ -74,11 +74,12 @@ resource aks 'Microsoft.ContainerService/managedClusters@2025-01-01' = {
       }
       // ── Best practice: Node Restriction prevents nodes from labelling
       //    themselves or reading other nodes' secrets. Issue #29.
-      //    Bicep type defs lag the API for this property — suppress the warning.
-      #disable-next-line BCP037
-      nodeRestriction: {
-        enabled: true
-      }
+      //    NOTE: API 2025-01-01 rejects `nodeRestriction` field — stripped
+      //    pending newer API or alternate enablement path (feature flag/
+      //    aks-preview CLI). Tracked: redeploy 2026-05-26.
+      // nodeRestriction: {
+      //   enabled: true
+      // }
       // ── Best practice: Image Cleaner removes stale/unused images from nodes
       //    every 48 h, reducing CVE surface. Issue #29.
       imageCleaner: {
@@ -110,7 +111,9 @@ resource aks 'Microsoft.ContainerService/managedClusters@2025-01-01' = {
         vmSize: systemVmSize
         osType: 'Linux'
         osSKU: 'AzureLinux'
-        osDiskSizeGB: 128
+        // Ephemeral OS requires osDiskSize <= VM cache size. D4s_v5 cache
+        // is 100 GiB — 75 GB fits comfortably with overhead for the agent.
+        osDiskSizeGB: 75
         osDiskType: 'Ephemeral'
         type: 'VirtualMachineScaleSets'
         vnetSubnetID: subnetId
