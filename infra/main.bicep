@@ -20,7 +20,7 @@ param suffix string = uniqueString(resourceGroup().id)
 param kubernetesVersion string = '1.34'
 
 @description('System node pool VM size. Small — no storage role.')
-param systemVmSize string = 'Standard_D4s_v5'
+param systemVmSize string = 'Standard_D4ds_v5'
 
 @description('System node count.')
 param systemNodeCount int = 2
