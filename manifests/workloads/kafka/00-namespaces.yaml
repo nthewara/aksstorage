@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kafka-az1
+  labels:
+    aksstorage.lab/scenario: kafka-mirrormaker
+    aksstorage.lab/zone: "1"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kafka-az2
+  labels:
+    aksstorage.lab/scenario: kafka-mirrormaker
+    aksstorage.lab/zone: "2"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kafka-mm2
+  labels:
+    aksstorage.lab/scenario: kafka-mirrormaker

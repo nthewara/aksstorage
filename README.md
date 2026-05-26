@@ -65,6 +65,7 @@ docs/
   PREMIUM-SSD-ZRS.md   Premium SSD v1 ZRS — cross-AZ block storage for single-instance DBs
   FAILURE-SCENARIOS.md Cassandra + NVMe specific failure exercises
   AZURE-FILES.md       Azure Files (SMB + NFS) RWX walkthrough + nginx-shared demo
+  KAFKA-MIRRORMAKER.md Kafka KRaft AZ1↔AZ2 on Premium SSD LRS + MirrorMaker 2 (validated)
   COST-CLEANUP.md      Per-scenario cost shape + teardown playbook
 tests/
   validate.sh          Checks acstor pods, SCs, Cassandra nodetool + CQL
@@ -89,6 +90,7 @@ comparison.
 | Premium SSD v1 ZRS | `premium-ssd-zrs` | AKS built-in CSI (`disk.csi.azure.com`, `Premium_ZRS` SKU) | Single-instance DBs needing cross-AZ HA → [`docs/PREMIUM-SSD-ZRS.md`](docs/PREMIUM-SSD-ZRS.md) |
 | Premium SSD v2 | `premium-ssd-v2` | AKS built-in CSI (`disk.csi.azure.com`, modern SKU) | Single-instance DBs needing sub-ms + durability → [`docs/PREMIUM-SSD-V2.md`](docs/PREMIUM-SSD-V2.md) |
 | Azure Files | `acstor-azurefiles-{standard,premium,nfs}` | AKS built-in CSI (`file.csi.azure.com`) | RWX / SMB / NFS — shared content, web farms, CI caches → [`docs/AZURE-FILES.md`](docs/AZURE-FILES.md) |
+| Kafka + MM2 across AZs | `azure-disk` (Premium_LRS, zone-pinned) | AKS built-in CSI + MirrorMaker 2 | Two single-broker KRaft clusters across AZ1/AZ2 with app-level replication → [`docs/KAFKA-MIRRORMAKER.md`](docs/KAFKA-MIRRORMAKER.md) |
 
 → Full matrix: [`docs/SCENARIOS.md`](docs/SCENARIOS.md)
 → Concepts/why: [`docs/STORAGE-ARCHITECTURE.md`](docs/STORAGE-ARCHITECTURE.md)
